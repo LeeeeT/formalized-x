@@ -166,7 +166,7 @@ law decode.unicode:
   for hq1: {ABNF.matches.era(grammar, "quotation-mark", q1) == True{} : Bool}
   for hq2: {ABNF.matches.era(grammar, "quotation-mark", q2) == True{} : Bool}
   for hx: {ABNF.matches.era(grammar, "string", q1 ++ x ++ q2) == True{} : Bool}
-  {Extra.String.is_unicode.era(decode.era(x)) == True{} : Bool}
+  {Text.valid(decode.era(x)) == True{} : Bool}
 
 # ===========
 # SPEC Number
@@ -175,23 +175,30 @@ law decode.unicode:
 law Number:
   Type
 
-# Number.make(n, h): the number written as n.
+law Number.valid:
+  for n: String
+  Bool
+
+law Number.valid.ok:
+  for n: String
+  {Number.valid(n) == ABNF.matches.era(grammar, "number", n) : Bool}
+
 law Number.make:
   for n: String
-  for h: {ABNF.matches.era(grammar, "number", n) == True{} : Bool}
+  for h: {Number.valid(n) == True{} : Bool}
   Number
 
 law Number.rec:
   for ~P: @-x:Number -> Type
-  for ~f: @n:String -> @h:{ABNF.matches.era(grammar, "number", n) == True{} : Bool} -> P(Number.make(n, h))
+  for ~f: @n:String -> @h:{Number.valid(n) == True{} : Bool} -> P(Number.make(n, h))
   for x: Number
   P(x)
 
 law Number.rec.make:
   for ~P: @-x:Number -> Type
-  for ~f: @n:String -> @h:{ABNF.matches.era(grammar, "number", n) == True{} : Bool} -> P(Number.make(n, h))
+  for ~f: @n:String -> @h:{Number.valid(n) == True{} : Bool} -> P(Number.make(n, h))
   for n: String
-  for h: {ABNF.matches.era(grammar, "number", n) == True{} : Bool}
+  for h: {Number.valid(n) == True{} : Bool}
   {Number.rec(~P, ~f, Number.make(n, h)) == f(n, h) : P(Number.make(n, h))}
 
 # Number.make.try(n) gives Inr with the number n when n is one, and hands n back
@@ -202,12 +209,12 @@ law Number.make.try:
 
 law Number.make.try.valid:
   for n: String
-  for h: {ABNF.matches.era(grammar, "number", n) == True{} : Bool}
+  for h: {Number.valid(n) == True{} : Bool}
   {Number.make.try(n) == Inr{Number.make(n, h)} : String | Number}
 
 law Number.make.try.invalid:
   for n: String
-  for h: {ABNF.matches.era(grammar, "number", n) == False{} : Bool}
+  for h: {Number.valid(n) == False{} : Bool}
   {Number.make.try(n) == Inl{n} : String | Number}
 
 # Number.make.try.era(n) gives what Number.make.try(n) gives, as a Maybe:
@@ -235,24 +242,30 @@ law Number.make.try.era.invalid:
 law Text:
   Type
 
-# Text.make(s, h): the string s, whose characters are all Unicode code points,
-# so a JSON string can write it.
+law Text.valid:
+  for s: String
+  Bool
+
+law Text.valid.ok:
+  for s: String
+  {Text.valid(s) == Extra.String.is_unicode.era(s) : Bool}
+
 law Text.make:
   for s: String
-  for h: {Extra.String.is_unicode.era(s) == True{} : Bool}
+  for h: {Text.valid(s) == True{} : Bool}
   Text
 
 law Text.rec:
   for ~P: @-x:Text -> Type
-  for ~f: @s:String -> @h:{Extra.String.is_unicode.era(s) == True{} : Bool} -> P(Text.make(s, h))
+  for ~f: @s:String -> @h:{Text.valid(s) == True{} : Bool} -> P(Text.make(s, h))
   for x: Text
   P(x)
 
 law Text.rec.make:
   for ~P: @-x:Text -> Type
-  for ~f: @s:String -> @h:{Extra.String.is_unicode.era(s) == True{} : Bool} -> P(Text.make(s, h))
+  for ~f: @s:String -> @h:{Text.valid(s) == True{} : Bool} -> P(Text.make(s, h))
   for s: String
-  for h: {Extra.String.is_unicode.era(s) == True{} : Bool}
+  for h: {Text.valid(s) == True{} : Bool}
   {Text.rec(~P, ~f, Text.make(s, h)) == f(s, h) : P(Text.make(s, h))}
 
 # Text.make.try(s) gives Inr with the text s when s is one, and hands s back
@@ -263,12 +276,12 @@ law Text.make.try:
 
 law Text.make.try.valid:
   for s: String
-  for h: {Extra.String.is_unicode.era(s) == True{} : Bool}
+  for h: {Text.valid(s) == True{} : Bool}
   {Text.make.try(s) == Inr{Text.make(s, h)} : String | Text}
 
 law Text.make.try.invalid:
   for s: String
-  for h: {Extra.String.is_unicode.era(s) == False{} : Bool}
+  for h: {Text.valid(s) == False{} : Bool}
   {Text.make.try(s) == Inl{s} : String | Text}
 
 # Text.make.try.era(s) gives what Text.make.try(s) gives, as a Maybe:
@@ -725,7 +738,7 @@ law load.false:
 # value = number
 law load.number:
   for n: String
-  for h: {ABNF.matches.era(grammar, "number", n) == True{} : Bool}
+  for h: {Number.valid(n) == True{} : Bool}
   {load.era(n) == Some{Value.number(Number.make(n, h))} : Maybe<Value>}
 
 # string = quotation-mark *char quotation-mark
@@ -736,7 +749,7 @@ law load.string:
   for hq1: {ABNF.matches.era(grammar, "quotation-mark", q1) == True{} : Bool}
   for hq2: {ABNF.matches.era(grammar, "quotation-mark", q2) == True{} : Bool}
   for hx: {ABNF.matches.era(grammar, "string", q1 ++ x ++ q2) == True{} : Bool}
-  for hu: {Extra.String.is_unicode.era(decode.era(x)) == True{} : Bool}
+  for hu: {Text.valid(decode.era(x)) == True{} : Bool}
   {load.era(q1 ++ x ++ q2) == Some{Value.string(Text.make(decode.era(x), hu))} : Maybe<Value>}
 
 # array = begin-array [ value *( value-separator value ) ] end-array

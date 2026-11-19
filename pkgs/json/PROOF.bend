@@ -14,13 +14,69 @@ import ../abnf/PROOF.bend as AP
 import ../base-extra/LAWS.bend as Extra
 import ../base-extra/PROOF.bend as EP
 
-# The value of the hexadecimal digits x, as base-extra's to_hex.era computes it.
+# The value of a hex digit, and of hex digits; on other characters they give
+# something, but only hex digits reach them.
+def hexdv(isd: Bool, islow: Bool, +x: U32) -> U32:
+  match isd:
+    case True{}:
+      (x - 48 : U32)
+    case False{}:
+      match islow:
+        case True{}:
+          (x - 87 : U32)
+        case False{}:
+          (x - 55 : U32)
+
+def hexd(+c: Char) -> U32:
+  hexdv((Char.to_u32(c) <= 57 : U32), (Char.to_u32(c) >= 97 : U32), Char.to_u32(c))
+
+def hexG(s: String, acc: U32) -> U32:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{+c, t}:
+      hexG(t, (acc * 16 + hexd(c) : U32))
+
 def hexv(x: String, z: U32) -> U32:
   match x:
     case SNil{}:
       0
-    case SCon{c, t}:
-      EP.hex.go(t, EP.dval(SCon{c, SNil{}}))
+    case SCon{+c, t}:
+      hexG(t, hexd(c))
+
+# Whether every character of s is a Unicode code point (Text.valid).
+def F.uall(s: String) -> Bool:
+  List.all(~&2, ~Char, ~(c2 => (Char.to_u32(c2) <= 1114111 : U32)), String.to_list(s))
+
+def F.snd2(-A: Type, -B: Type, p: A & B) -> B:
+  match p:
+    case (a, b):
+      b
+
+# Hex digits, without String.contains (see F.ishexEq).
+def F.hxs(s: String, +c: Char, acc: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{h, t}:
+      F.hxs(t, c, Bool.or(acc, Char.is_eq(h, c)))
+
+def F.hx(+c: Char) -> Bool:
+  F.hxs("0123456789abcdefABCDEF", c, False{})
+
+def F.hexs(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{+c, t}:
+      Bool.and(F.hx(c), F.hexs(t))
+
+def F.ishexS(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      False{}
+    case SCon{+c, t}:
+      Bool.and(F.hx(c), F.hexs(t))
 
 # Base lemmas
 # ===========
@@ -1022,7 +1078,7 @@ def dec(s: String, st: DS, +p: Maybe<&2, U32>) -> String:
         case DU{acc}:
           match acc:
             case SCon{+a, SCon{+b, SCon{+d, SNil{}}}}:
-              sel(String, Extra.String.is_hex.era(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}))
+              sel(String, F.ishexS(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}))
             case +acc:
               dec(t, DU{String.append(acc, SCon{c, SNil{}})}, p)
 
@@ -2180,9 +2236,9 @@ def fnpF(+v: U32, +h: {hi(v) == False{} : Bool}) -> {fnp(v) == None{} : Maybe<&2
   selF(Maybe<&2, U32>, hi(v), u => Some{v}, u => None{}, h)
 
 # After \uXXXX, dec writes pre and keeps np pending.
-def decX(+a: Char, +b: Char, +c: Char, +d: Char, -t: String, +p: Maybe<&2, U32>, +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool})
+def decX(+a: Char, +b: Char, +c: Char, +d: Char, -t: String, +p: Maybe<&2, U32>, +hx: {F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool})
   -> {dec(SCon{'\\', SCon{'u', SCon{a, SCon{b, SCon{c, SCon{d, t}}}}}}, DN{}, p) == String.append(pre(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), p))) : String}:
-  selT(String, Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, dec(t, DN{}, None{}))}}), hx)
+  selT(String, F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, dec(t, DN{}, None{}))}}), hx)
 
 def escM(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +he: {ABNF.check.era(ABNF.full(toList(gl)), ABNF.ref("escape"), e) == True{} : Bool}) -> {SCon{'\\', SNil{}} == e : String}:
   Equal.sym(String, e, SCon{'\\', SNil{}}, charM(gl, hg, "escape", '\\', e, {==}, he))
@@ -2190,27 +2246,27 @@ def escM(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +he: {ABNF.check.era(AB
 def escMM(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool}) -> {SCon{'\\', SNil{}} == e : String}:
   escM(gl, hg, e, mt(gl, hg, "escape", e, he))
 
-def decu.go(+a: Char, +b: Char, +c: Char, +d: Char, -t: String, +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, +hs: {hi(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == False{} : Bool})
+def decu.go(+a: Char, +b: Char, +c: Char, +d: Char, -t: String, +hx: {F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, +hs: {hi(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == False{} : Bool})
   -> {dec(SCon{'\\', SCon{'u', SCon{a, SCon{b, SCon{c, SCon{d, t}}}}}}, DN{}, None{}) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}:
   %Equal.sym(String, dec(SCon{'\\', SCon{'u', SCon{a, SCon{b, SCon{c, SCon{d, t}}}}}}, DN{}, None{}), String.append(pre(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), None{}), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), None{}))), decX(a, b, c, d, t, None{}, hx)) : {_ == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}
   %Equal.sym(String, fpre(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)), SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, SNil{}}, fpreF(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), hs)) : {String.append(_, dec(t, DN{}, fnp(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)))) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}
   %Equal.sym(Maybe<&2, U32>, fnp(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)), None{}, fnpF(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), hs)) : {String.append(SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, SNil{}}, dec(t, DN{}, _)) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}
   {==}
 
-def decu(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a: Char, +b: Char, +c: Char, +d: Char, -t: String, +he: {ABNF.check.era(ABNF.full(toList(gl)), ABNF.ref("escape"), e) == True{} : Bool}, +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, +hs: {hi(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == False{} : Bool})
+def decu(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a: Char, +b: Char, +c: Char, +d: Char, -t: String, +he: {ABNF.check.era(ABNF.full(toList(gl)), ABNF.ref("escape"), e) == True{} : Bool}, +hx: {F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, +hs: {hi(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == False{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t))), DN{}, None{}) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}:
   %escM(gl, hg, e, he) : {dec(String.append(_, String.append("u", String.append(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t))), DN{}, None{}) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}
   decu.go(a, b, c, d, t, hx, hs)
 
 def decu2(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, -x: String, -t: String, +a: Char, +b: Char, +c: Char, +d: Char, +ex: {SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}} == x : String}, +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool},
-  +hx: {Extra.String.is_hex.era(x) == True{} : Bool}, +hs: {Bool.or(U32.is_lt(hexv(x, 0), 55296), U32.is_gt(hexv(x, 0), 56319)) == True{} : Bool})
+  +hx: {F.ishexS(x) == True{} : Bool}, +hs: {Bool.or(U32.is_lt(hexv(x, 0), 55296), U32.is_gt(hexv(x, 0), 56319)) == True{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(x, t))), DN{}, None{}) == SCon{Chr{hexv(x, 0)}, dec(t, DN{}, None{})} : String}:
   %ex : {dec(String.append(e, String.append("u", String.append(_, t))), DN{}, None{}) == SCon{Chr{hexv(_, 0)}, dec(t, DN{}, None{})} : String}
-  decu(gl, hg, e, a, b, c, d, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), Extra.String.is_hex.era(x), True{}, Equal.cong(String, Bool, z => Extra.String.is_hex.era(z), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hx),
+  decu(gl, hg, e, a, b, c, d, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), F.ishexS(x), True{}, Equal.cong(String, Bool, z => F.ishexS(z), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hx),
     cmp_out(U32.cmp(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 55296), U32.cmp(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 56319), Equal.trans(Bool, Bool.or(U32.is_lt(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 55296), U32.is_gt(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 56319)), Bool.or(U32.is_lt(hexv(x, 0), 55296), U32.is_gt(hexv(x, 0), 56319)), True{}, Equal.cong(String, Bool, z => Bool.or(U32.is_lt(hexv(z, 0), 55296), U32.is_gt(hexv(z, 0), 56319)), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hs)))
 
 def decp(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a1: Char, +b1: Char, +c1: Char, +d1: Char, +a2: Char, +b2: Char, +c2: Char, +d2: Char, -t: String, +he: {ABNF.check.era(ABNF.full(toList(gl)), ABNF.ref("escape"), e) == True{} : Bool},
-  +hx1: {Extra.String.is_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}) == True{} : Bool}, +hx2: {Extra.String.is_hex.era(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}) == True{} : Bool}, +hs1: {hi(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)) == True{} : Bool}, +hs2: {lo(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0)) == True{} : Bool})
+  +hx1: {F.ishexS(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}) == True{} : Bool}, +hx2: {F.ishexS(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}) == True{} : Bool}, +hs1: {hi(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)) == True{} : Bool}, +hs2: {lo(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0)) == True{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, String.append(e, String.append("u", String.append(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t)))))), DN{}, None{}) == SCon{Chr{pair(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0))}, dec(t, DN{}, None{})} : String}:
   %escM(gl, hg, e, he) : {dec(String.append(_, String.append("u", String.append(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, String.append(_, String.append("u", String.append(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t)))))), DN{}, None{}) == SCon{Chr{pair(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0))}, dec(t, DN{}, None{})} : String}
   %Equal.sym(String, dec(SCon{'\\', SCon{'u', SCon{a1, SCon{b1, SCon{c1, SCon{d1, SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}}}}}}}, DN{}, None{}), String.append(pre(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), None{}), dec(SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}, DN{}, np(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), None{}))), decX(a1, b1, c1, d1, SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}, None{}, hx1)) : {_ == SCon{Chr{pair(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0))}, dec(t, DN{}, None{})} : String}
@@ -2222,12 +2278,12 @@ def decp(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a1: Char, +b1: Char, +
   {==}
 
 def decp2(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, -x1: String, -x2: String, -t: String, +a1: Char, +b1: Char, +c1: Char, +d1: Char, +ex1: {SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} == x1 : String}, +a2: Char, +b2: Char, +c2: Char, +d2: Char, +ex2: {SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}} == x2 : String},
-  +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool}, +hx1: {Extra.String.is_hex.era(x1) == True{} : Bool}, +hx2: {Extra.String.is_hex.era(x2) == True{} : Bool},
+  +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool}, +hx1: {F.ishexS(x1) == True{} : Bool}, +hx2: {F.ishexS(x2) == True{} : Bool},
   +hs1: {Bool.and(U32.is_ge(hexv(x1, 0), 55296), U32.is_le(hexv(x1, 0), 56319)) == True{} : Bool}, +hs2: {Bool.and(U32.is_ge(hexv(x2, 0), 56320), U32.is_le(hexv(x2, 0), 57343)) == True{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(x1, String.append(e, String.append("u", String.append(x2, t)))))), DN{}, None{}) == SCon{Chr{pair(hexv(x1, 0), hexv(x2, 0))}, dec(t, DN{}, None{})} : String}:
   %ex1 : {dec(String.append(e, String.append("u", String.append(_, String.append(e, String.append("u", String.append(x2, t)))))), DN{}, None{}) == SCon{Chr{pair(hexv(_, 0), hexv(x2, 0))}, dec(t, DN{}, None{})} : String}
   %ex2 : {dec(String.append(e, String.append("u", String.append(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, String.append(e, String.append("u", String.append(_, t)))))), DN{}, None{}) == SCon{Chr{pair(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), hexv(_, 0))}, dec(t, DN{}, None{})} : String}
-  decp(gl, hg, e, a1, b1, c1, d1, a2, b2, c2, d2, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, Extra.String.is_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}), Extra.String.is_hex.era(x1), True{}, Equal.cong(String, Bool, z => Extra.String.is_hex.era(z), SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, x1, ex1), hx1), Equal.trans(Bool, Extra.String.is_hex.era(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}), Extra.String.is_hex.era(x2), True{}, Equal.cong(String, Bool, z => Extra.String.is_hex.era(z), SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, x2, ex2), hx2),
+  decp(gl, hg, e, a1, b1, c1, d1, a2, b2, c2, d2, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, F.ishexS(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}), F.ishexS(x1), True{}, Equal.cong(String, Bool, z => F.ishexS(z), SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, x1, ex1), hx1), Equal.trans(Bool, F.ishexS(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}), F.ishexS(x2), True{}, Equal.cong(String, Bool, z => F.ishexS(z), SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, x2, ex2), hx2),
     Equal.trans(Bool, Bool.and(U32.is_ge(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), 55296), U32.is_le(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), 56319)), Bool.and(U32.is_ge(hexv(x1, 0), 55296), U32.is_le(hexv(x1, 0), 56319)), True{}, Equal.cong(String, Bool, z => Bool.and(U32.is_ge(hexv(z, 0), 55296), U32.is_le(hexv(z, 0), 56319)), SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, x1, ex1), hs1), Equal.trans(Bool, Bool.and(U32.is_ge(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0), 56320), U32.is_le(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0), 57343)), Bool.and(U32.is_ge(hexv(x2, 0), 56320), U32.is_le(hexv(x2, 0), 57343)), True{}, Equal.cong(String, Bool, z => Bool.and(U32.is_ge(hexv(z, 0), 56320), U32.is_le(hexv(z, 0), 57343)), SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, x2, ex2), hs2))
 
 def pendF(+c: Char, -t1: String, +v: U32, +k: {Char.is_eq(c, '\\') == False{} : Bool}) -> {dec(SCon{c, t1}, DN{}, Some{v}) == SCon{Chr{v}, dec(SCon{c, t1}, DN{}, None{})} : String}:
@@ -2275,7 +2331,7 @@ def pend(t: String, +v: U32, +h: {String.starts_with(t, "\\u") == False{} : Bool
         +k => pendF(c, t1, v, k))
 
 def dech(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a: Char, +b: Char, +c: Char, +d: Char, +t: String, +he: {ABNF.check.era(ABNF.full(toList(gl)), ABNF.ref("escape"), e) == True{} : Bool},
-  +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, +hs: {hi(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == True{} : Bool}, +ht: {String.starts_with(t, String.append(e, "u")) == False{} : Bool})
+  +hx: {F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, +hs: {hi(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == True{} : Bool}, +ht: {String.starts_with(t, String.append(e, "u")) == False{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t))), DN{}, None{}) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}:
   %escM(gl, hg, e, he) : {dec(String.append(_, String.append("u", String.append(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t))), DN{}, None{}) == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}
   %Equal.sym(String, dec(SCon{'\\', SCon{'u', SCon{a, SCon{b, SCon{c, SCon{d, t}}}}}}, DN{}, None{}), String.append(pre(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), None{}), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), None{}))), decX(a, b, c, d, t, None{}, hx)) : {_ == SCon{Chr{hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)}, dec(t, DN{}, None{})} : String}
@@ -2284,13 +2340,13 @@ def dech(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a: Char, +b: Char, +c:
   pend(t, hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), Equal.trans(Bool, String.starts_with(t, "\\u"), String.starts_with(t, String.append(e, "u")), False{}, Equal.cong(String, Bool, z => String.starts_with(t, String.append(z, "u")), SCon{'\\', SNil{}}, e, escM(gl, hg, e, he)), ht))
 
 def dech2(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, -x: String, +t: String, +a: Char, +b: Char, +c: Char, +d: Char, +ex: {SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}} == x : String}, +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool},
-  +hx: {Extra.String.is_hex.era(x) == True{} : Bool}, +hs: {Bool.and(U32.is_ge(hexv(x, 0), 55296), U32.is_le(hexv(x, 0), 56319)) == True{} : Bool}, +ht: {String.starts_with(t, String.append(e, "u")) == False{} : Bool})
+  +hx: {F.ishexS(x) == True{} : Bool}, +hs: {Bool.and(U32.is_ge(hexv(x, 0), 55296), U32.is_le(hexv(x, 0), 56319)) == True{} : Bool}, +ht: {String.starts_with(t, String.append(e, "u")) == False{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(x, t))), DN{}, None{}) == SCon{Chr{hexv(x, 0)}, dec(t, DN{}, None{})} : String}:
   %ex : {dec(String.append(e, String.append("u", String.append(_, t))), DN{}, None{}) == SCon{Chr{hexv(_, 0)}, dec(t, DN{}, None{})} : String}
-  dech(gl, hg, e, a, b, c, d, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), Extra.String.is_hex.era(x), True{}, Equal.cong(String, Bool, z => Extra.String.is_hex.era(z), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hx), Equal.trans(Bool, Bool.and(U32.is_ge(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 55296), U32.is_le(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 56319)), Bool.and(U32.is_ge(hexv(x, 0), 55296), U32.is_le(hexv(x, 0), 56319)), True{}, Equal.cong(String, Bool, z => Bool.and(U32.is_ge(hexv(z, 0), 55296), U32.is_le(hexv(z, 0), 56319)), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hs), ht)
+  dech(gl, hg, e, a, b, c, d, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), F.ishexS(x), True{}, Equal.cong(String, Bool, z => F.ishexS(z), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hx), Equal.trans(Bool, Bool.and(U32.is_ge(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 55296), U32.is_le(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), 56319)), Bool.and(U32.is_ge(hexv(x, 0), 55296), U32.is_le(hexv(x, 0), 56319)), True{}, Equal.cong(String, Bool, z => Bool.and(U32.is_ge(hexv(z, 0), 55296), U32.is_le(hexv(z, 0), 56319)), SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, x, ex), hs), ht)
 
 def dechu(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a1: Char, +b1: Char, +c1: Char, +d1: Char, +a2: Char, +b2: Char, +c2: Char, +d2: Char, -t: String, +he: {ABNF.check.era(ABNF.full(toList(gl)), ABNF.ref("escape"), e) == True{} : Bool},
-  +hx1: {Extra.String.is_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}) == True{} : Bool}, +hx2: {Extra.String.is_hex.era(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}) == True{} : Bool}, +hs1: {hi(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)) == True{} : Bool}, +hs2: {lo(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0)) == False{} : Bool})
+  +hx1: {F.ishexS(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}) == True{} : Bool}, +hx2: {F.ishexS(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}) == True{} : Bool}, +hs1: {hi(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)) == True{} : Bool}, +hs2: {lo(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0)) == False{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, String.append(e, String.append("u", String.append(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t)))))), DN{}, None{}) == SCon{Chr{hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)}, dec(String.append(e, String.append("u", String.append(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t))), DN{}, None{})} : String}:
   %escM(gl, hg, e, he) : {dec(String.append(_, String.append("u", String.append(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, String.append(_, String.append("u", String.append(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t)))))), DN{}, None{}) == SCon{Chr{hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)}, dec(String.append(_, String.append("u", String.append(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t))), DN{}, None{})} : String}
   %Equal.sym(String, dec(SCon{'\\', SCon{'u', SCon{a1, SCon{b1, SCon{c1, SCon{d1, SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}}}}}}}, DN{}, None{}), String.append(pre(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), None{}), dec(SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}, DN{}, np(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), None{}))), decX(a1, b1, c1, d1, SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}, None{}, hx1)) : {_ == SCon{Chr{hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)}, dec(SCon{'\\', SCon{'u', SCon{a2, SCon{b2, SCon{c2, SCon{d2, t}}}}}}, DN{}, None{})} : String}
@@ -2303,12 +2359,12 @@ def dechu(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, +a1: Char, +b1: Char, 
   {==}
 
 def dechu2(+gl: GL, +hg: {gl == GRAMMAR : GL}, +e: String, -x1: String, -x2: String, -t: String, +a1: Char, +b1: Char, +c1: Char, +d1: Char, +ex1: {SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} == x1 : String}, +a2: Char, +b2: Char, +c2: Char, +d2: Char, +ex2: {SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}} == x2 : String},
-  +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool}, +hx1: {Extra.String.is_hex.era(x1) == True{} : Bool}, +hx2: {Extra.String.is_hex.era(x2) == True{} : Bool},
+  +he: {ABNF.matches.era(toList(gl), "escape", e) == True{} : Bool}, +hx1: {F.ishexS(x1) == True{} : Bool}, +hx2: {F.ishexS(x2) == True{} : Bool},
   +hs1: {Bool.and(U32.is_ge(hexv(x1, 0), 55296), U32.is_le(hexv(x1, 0), 56319)) == True{} : Bool}, +hs2: {Bool.or(U32.is_lt(hexv(x2, 0), 56320), U32.is_gt(hexv(x2, 0), 57343)) == True{} : Bool})
   -> {dec(String.append(e, String.append("u", String.append(x1, String.append(e, String.append("u", String.append(x2, t)))))), DN{}, None{}) == SCon{Chr{hexv(x1, 0)}, dec(String.append(e, String.append("u", String.append(x2, t))), DN{}, None{})} : String}:
   %ex1 : {dec(String.append(e, String.append("u", String.append(_, String.append(e, String.append("u", String.append(x2, t)))))), DN{}, None{}) == SCon{Chr{hexv(_, 0)}, dec(String.append(e, String.append("u", String.append(x2, t))), DN{}, None{})} : String}
   %ex2 : {dec(String.append(e, String.append("u", String.append(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, String.append(e, String.append("u", String.append(_, t)))))), DN{}, None{}) == SCon{Chr{hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0)}, dec(String.append(e, String.append("u", String.append(_, t))), DN{}, None{})} : String}
-  dechu(gl, hg, e, a1, b1, c1, d1, a2, b2, c2, d2, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, Extra.String.is_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}), Extra.String.is_hex.era(x1), True{}, Equal.cong(String, Bool, z => Extra.String.is_hex.era(z), SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, x1, ex1), hx1), Equal.trans(Bool, Extra.String.is_hex.era(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}), Extra.String.is_hex.era(x2), True{}, Equal.cong(String, Bool, z => Extra.String.is_hex.era(z), SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, x2, ex2), hx2),
+  dechu(gl, hg, e, a1, b1, c1, d1, a2, b2, c2, d2, t, mt(gl, hg, "escape", e, he), Equal.trans(Bool, F.ishexS(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}), F.ishexS(x1), True{}, Equal.cong(String, Bool, z => F.ishexS(z), SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, x1, ex1), hx1), Equal.trans(Bool, F.ishexS(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}), F.ishexS(x2), True{}, Equal.cong(String, Bool, z => F.ishexS(z), SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, x2, ex2), hx2),
     Equal.trans(Bool, Bool.and(U32.is_ge(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), 55296), U32.is_le(hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0), 56319)), Bool.and(U32.is_ge(hexv(x1, 0), 55296), U32.is_le(hexv(x1, 0), 56319)), True{}, Equal.cong(String, Bool, z => Bool.and(U32.is_ge(hexv(z, 0), 55296), U32.is_le(hexv(z, 0), 56319)), SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, x1, ex1), hs1),
     cmp_out(U32.cmp(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0), 56320), U32.cmp(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0), 57343), Equal.trans(Bool, Bool.or(U32.is_lt(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0), 56320), U32.is_gt(hexv(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, 0), 57343)), Bool.or(U32.is_lt(hexv(x2, 0), 56320), U32.is_gt(hexv(x2, 0), 57343)), True{}, Equal.cong(String, Bool, z => Bool.or(U32.is_lt(hexv(z, 0), 56320), U32.is_gt(hexv(z, 0), 57343)), SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, x2, ex2), hs2)))
 
@@ -5518,6 +5574,624 @@ def objFull(+gl: GL, +hg: {gl == GRAMMAR : GL}, +b: String, +k: String, +q1: Str
   %Equal.sym(String, skip_ws(String.append(str_tl(skip_ws(b)), SCon{'"', String.append(x, SCon{'"', String.append(n, String.append(v, String.append(s, rest)))})})), skip_ws(SCon{'"', String.append(x, SCon{'"', String.append(n, String.append(v, String.append(s, rest)))})}), WE(str_tl(skip_ws(b)), SCon{'"', String.append(x, SCon{'"', String.append(n, String.append(v, String.append(s, rest)))})}, tokW('{', b, hb))) : {brk('}', _, w => Some{PR{RObj{[]}, w}}, w => pv(1n+String.length(String.append(str_tl(skip_ws(b)), SCon{'"', String.append(x, SCon{'"', String.append(n, String.append(v, String.append(s, rest)))})})), MM{}, w)) == ocons(x, r1, pv(String.length(String.append(str_tl(skip_ws(b)), String.append(x, SCon{'"', String.append(n, String.append(v, String.append(s, rest)))}))), MM{}, skip_ws(rest))) : Maybe<&2, PR>}
   objMM(gl, hg, str_tl(skip_ws(b)), x, n, v, s, rest, hx, hn, hs, r1, u1, e1, w1)
 
+# ============
+# Fast numbers
+# ============
+#
+# The fast loader reads a number with a scanner whose states are F.NQ, moved
+# by the class F.ncls gives each character. F.cont(q, s) is what num_scan reads
+# of s once the characters that led to q are read, and F.cs says that on each
+# character the scanner and num_scan move alike.
+
+# The classes of characters the fast loader tells apart.
+type F.CC is Data:
+  CQ{}
+  CB{}
+  CW{}
+  CComma{}
+  CColon{}
+  CRA{}
+  CRO{}
+  CZ{}
+  CD{}
+  CDot{}
+  CE{}
+  CP{}
+  CM{}
+  CX{}
+  CBad{}
+
+def F.nc6(b: Bool) -> F.CC:
+  match b:
+    case True{}:
+      CM{}
+    case False{}:
+      CX{}
+
+def F.nc5(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CP{}
+    case False{}:
+      F.nc6(Char.is_eq('-', c))
+
+def F.nc4(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CE{}
+    case False{}:
+      F.nc5(Char.is_eq('+', c), c)
+
+def F.nc3(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CDot{}
+    case False{}:
+      F.nc4(ise(c), c)
+
+def F.nc2(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CD{}
+    case False{}:
+      F.nc3(Char.is_eq('.', c), c)
+
+def F.nc1(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CZ{}
+    case False{}:
+      F.nc2(is19(c), c)
+
+# The class of a character in a number.
+def F.ncls(+c: Char) -> F.CC:
+  F.nc1(Char.is_eq('0', c), c)
+
+# The scanner's states: S at the start, M after the minus, Z after an integer
+# part 0, I in a longer integer part, F0 after the point, F in the fraction,
+# E0 after the e, ES after its sign, E in the exponent, and X past the number.
+type F.NQ is Data:
+  QS{}
+  QM{}
+  QZ{}
+  QI{}
+  QF0{}
+  QF{}
+  QE0{}
+  QES{}
+  QE{}
+  QX{}
+
+def F.ndc(q: F.NQ, cc: F.CC) -> F.NQ:
+  match q cc:
+    case QS{} CM{}:
+      QM{}
+    case QS{} CZ{}:
+      QZ{}
+    case QS{} CD{}:
+      QI{}
+    case QM{} CZ{}:
+      QZ{}
+    case QM{} CD{}:
+      QI{}
+    case QZ{} CDot{}:
+      QF0{}
+    case QZ{} CE{}:
+      QE0{}
+    case QI{} CZ{}:
+      QI{}
+    case QI{} CD{}:
+      QI{}
+    case QI{} CDot{}:
+      QF0{}
+    case QI{} CE{}:
+      QE0{}
+    case QF0{} CZ{}:
+      QF{}
+    case QF0{} CD{}:
+      QF{}
+    case QF{} CZ{}:
+      QF{}
+    case QF{} CD{}:
+      QF{}
+    case QF{} CE{}:
+      QE0{}
+    case QE0{} CP{}:
+      QES{}
+    case QE0{} CM{}:
+      QES{}
+    case QE0{} CZ{}:
+      QE{}
+    case QE0{} CD{}:
+      QE{}
+    case QES{} CZ{}:
+      QE{}
+    case QES{} CD{}:
+      QE{}
+    case QE{} CZ{}:
+      QE{}
+    case QE{} CD{}:
+      QE{}
+    case _ _:
+      QX{}
+
+# A number may end in state q.
+def F.nend(q: F.NQ) -> Bool:
+  match q:
+    case QZ{}:
+      True{}
+    case QI{}:
+      True{}
+    case QF{}:
+      True{}
+    case QE{}:
+      True{}
+    case _:
+      False{}
+
+# nacc(s, q): from state q, s leads to the end of a number.
+def F.nacc(s: String, q: F.NQ) -> Bool:
+  match s:
+    case SNil{}:
+      F.nend(q)
+    case SCon{+c, t}:
+      F.nacc(t, F.ndc(q, F.ncls(c)))
+
+# What num_scan reads of the rest of a number, in each state.
+def F.cont(q: F.NQ, s: String) -> Maybe<&2, SP>:
+  match q:
+    case QS{}:
+      num_scan(s)
+    case QM{}:
+      nint(s)
+    case QZ{}:
+      nfrac(s)
+    case QI{}:
+      nint2(digits(s))
+    case QF0{}:
+      nfrac2(dig1(digits(s)))
+    case QF{}:
+      nfrac2(Some{digits(s)})
+    case QE0{}:
+      nsign(s)
+    case QES{}:
+      dig1(digits(s))
+    case QE{}:
+      Some{digits(s)}
+    case QX{}:
+      None{}
+
+def F.cend(b: Bool, +c: Char, +t: String) -> Maybe<&2, SP>:
+  match b:
+    case True{}:
+      Some{SP{SNil{}, SCon{c, t}}}
+    case False{}:
+      None{}
+
+# What num_scan reads of c then t in state q, once the scanner moves to q2.
+def F.cnext(q2: F.NQ, q: F.NQ, +c: Char, +t: String) -> Maybe<&2, SP>:
+  match q2:
+    case QX{}:
+      F.cend(F.nend(q), c, t)
+    case q2:
+      prepM(c, F.cont(q2, t))
+
+# Lemmas on scans
+
+def F.appNil(m: Maybe<&2, SP>) -> {appM(SNil{}, m) == m : Maybe<&2, SP>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case SP{a, t}:
+          {==}
+
+def F.appPrep(+c: Char, -a: String, m: Maybe<&2, SP>) -> {appM(SCon{c, a}, m) == prepM(c, appM(a, m)) : Maybe<&2, SP>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case SP{b, t}:
+          {==}
+
+def F.prepSome(+c: Char, p: SP) -> {prepM(c, Some{p}) == Some{SP{SCon{c, spa(p)}, spt(p)}} : Maybe<&2, SP>}:
+  match p:
+    case SP{a, t}:
+      {==}
+
+def F.isdig0(+c: Char) -> {isdig(c) == Bool.or(Char.is_eq('0', c), is19(c)) : Bool}:
+  %rangeB('1', '9', c) : {isdig(c) == Bool.or(Char.is_eq('0', c), _) : Bool}
+  %rangeB('0', '9', c) : {_ == Bool.or(Char.is_eq('0', c), memb(c, rcount('1', '9'), '1')) : Bool}
+  {==}
+
+def F.digT(+c: Char, +t: String, +h: {isdig(c) == True{} : Bool}) -> {digits(SCon{c, t}) == prepS(c, digits(t)) : SP}:
+  selT(SP, isdig(c), u => prepS(c, digits(t)), u => SP{SNil{}, SCon{c, t}}, h)
+
+def F.digF(+c: Char, +t: String, +h: {isdig(c) == False{} : Bool}) -> {digits(SCon{c, t}) == SP{SNil{}, SCon{c, t}} : SP}:
+  selF(SP, isdig(c), u => prepS(c, digits(t)), u => SP{SNil{}, SCon{c, t}}, h)
+
+def F.nexpF(+c: Char, +t: String, +h: {ise(c) == False{} : Bool}) -> {nexp(SCon{c, t}) == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}:
+  selF(Maybe<&2, SP>, ise(c), u => prepM(c, nsign(t)), u => Some{SP{SNil{}, SCon{c, t}}}, h)
+
+def F.nfracF(+c: Char, +t: String, +h: {Char.is_eq('.', c) == False{} : Bool}) -> {nfrac(SCon{c, t}) == nexp(SCon{c, t}) : Maybe<&2, SP>}:
+  selF(Maybe<&2, SP>, Char.is_eq('.', c), u => prepM(c, nfrac2(dig1(digits(t)))), u => nexp(SCon{c, t}), h)
+
+def F.nsignF(+c: Char, +t: String, +h: {issign(c) == False{} : Bool}) -> {nsign(SCon{c, t}) == dig1(digits(SCon{c, t})) : Maybe<&2, SP>}:
+  selF(Maybe<&2, SP>, issign(c), u => prepM(c, dig1(digits(t))), u => dig1(digits(SCon{c, t})), h)
+
+def F.nintF(+c: Char, +t: String, +h: {Char.is_eq('0', c) == False{} : Bool}) -> {nint(SCon{c, t}) == sel(Maybe<&2, SP>, is19(c), u => prepM(c, nint2(digits(t))), u => None{}) : Maybe<&2, SP>}:
+  selF(Maybe<&2, SP>, Char.is_eq('0', c), u => prepM(c, nfrac(t)), u => sel(Maybe<&2, SP>, is19(c), u => prepM(c, nint2(digits(t))), u => None{}), h)
+
+def F.nintD(+c: Char, +t: String, +h0: {Char.is_eq('0', c) == False{} : Bool}, +h: {is19(c) == True{} : Bool}) -> {nint(SCon{c, t}) == prepM(c, nint2(digits(t))) : Maybe<&2, SP>}:
+  %Equal.sym(Maybe<&2, SP>, nint(SCon{c, t}), sel(Maybe<&2, SP>, is19(c), u => prepM(c, nint2(digits(t))), u => None{}), F.nintF(c, t, h0)) : {_ == prepM(c, nint2(digits(t))) : Maybe<&2, SP>}
+  selT(Maybe<&2, SP>, is19(c), u => prepM(c, nint2(digits(t))), u => None{}, h)
+
+def F.nintX(+c: Char, +t: String, +h0: {Char.is_eq('0', c) == False{} : Bool}, +h: {is19(c) == False{} : Bool}) -> {nint(SCon{c, t}) == None{} : Maybe<&2, SP>}:
+  %Equal.sym(Maybe<&2, SP>, nint(SCon{c, t}), sel(Maybe<&2, SP>, is19(c), u => prepM(c, nint2(digits(t))), u => None{}), F.nintF(c, t, h0)) : {_ == None{} : Maybe<&2, SP>}
+  selF(Maybe<&2, SP>, is19(c), u => prepM(c, nint2(digits(t))), u => None{}, h)
+
+def F.numF(+c: Char, +t: String, +h: {Char.is_eq('-', c) == False{} : Bool}) -> {num_scan(SCon{c, t}) == nint(SCon{c, t}) : Maybe<&2, SP>}:
+  selF(Maybe<&2, SP>, Char.is_eq('-', c), u => prepM(c, nint(t)), u => nint(SCon{c, t}), h)
+
+def F.orFF(-a: Bool, -b: Bool, ha: {a == False{} : Bool}, hb: {b == False{} : Bool}) -> {Bool.or(a, b) == False{} : Bool}:
+  %Equal.sym(Bool, a, False{}, ha) : {Bool.or(_, b) == False{} : Bool}
+  hb
+
+def F.orFT(-a: Bool, -b: Bool, ha: {a == False{} : Bool}, hb: {b == True{} : Bool}) -> {Bool.or(a, b) == True{} : Bool}:
+  %Equal.sym(Bool, a, False{}, ha) : {Bool.or(_, b) == True{} : Bool}
+  hb
+
+def F.nclsD(+c: Char, +h0: {Char.is_eq('0', c) == False{} : Bool}, +h: {is19(c) == True{} : Bool}) -> {F.ncls(c) == CD{} : F.CC}:
+  %Equal.sym(Bool, Char.is_eq('0', c), False{}, h0) : {F.nc1(_, c) == CD{} : F.CC}
+  %Equal.sym(Bool, is19(c), True{}, h) : {F.nc2(_, c) == CD{} : F.CC}
+  {==}
+
+def F.nclsX(+c: Char, +h0: {Char.is_eq('0', c) == False{} : Bool}, +h: {is19(c) == False{} : Bool}, +hd: {Char.is_eq('.', c) == False{} : Bool}, +he: {ise(c) == False{} : Bool}, +hp: {Char.is_eq('+', c) == False{} : Bool}, +hm: {Char.is_eq('-', c) == False{} : Bool}) -> {F.ncls(c) == CX{} : F.CC}:
+  %Equal.sym(Bool, Char.is_eq('0', c), False{}, h0) : {F.nc1(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, is19(c), False{}, h) : {F.nc2(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('.', c), False{}, hd) : {F.nc3(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, ise(c), False{}, he) : {F.nc4(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('+', c), False{}, hp) : {F.nc5(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('-', c), False{}, hm) : {F.nc6(_) == CX{} : F.CC}
+  {==}
+
+def F.cs.m(q: F.NQ, +t: String) -> {F.cont(q, SCon{'-', t}) == F.cnext(F.ndc(q, F.ncls('-')), q, '-', t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      {==}
+    case QF0{}:
+      {==}
+    case QF{}:
+      {==}
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      {==}
+    case QX{}:
+      {==}
+
+def F.cs.p(q: F.NQ, +t: String) -> {F.cont(q, SCon{'+', t}) == F.cnext(F.ndc(q, F.ncls('+')), q, '+', t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      {==}
+    case QF0{}:
+      {==}
+    case QF{}:
+      {==}
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      {==}
+    case QX{}:
+      {==}
+
+def F.cs.dot(q: F.NQ, +t: String) -> {F.cont(q, SCon{'.', t}) == F.cnext(F.ndc(q, F.ncls('.')), q, '.', t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      F.appNil(prepM('.', nfrac2(dig1(digits(t)))))
+    case QF0{}:
+      {==}
+    case QF{}:
+      {==}
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      {==}
+    case QX{}:
+      {==}
+
+def F.cs.e(q: F.NQ, +t: String) -> {F.cont(q, SCon{'e', t}) == F.cnext(F.ndc(q, F.ncls('e')), q, 'e', t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      F.appNil(prepM('e', nsign(t)))
+    case QF0{}:
+      {==}
+    case QF{}:
+      F.appNil(prepM('e', nsign(t)))
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      {==}
+    case QX{}:
+      {==}
+
+def F.cs.E2(q: F.NQ, +t: String) -> {F.cont(q, SCon{'E', t}) == F.cnext(F.ndc(q, F.ncls('E')), q, 'E', t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      F.appNil(prepM('E', nsign(t)))
+    case QF0{}:
+      {==}
+    case QF{}:
+      F.appNil(prepM('E', nsign(t)))
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      {==}
+    case QX{}:
+      {==}
+
+def F.cs.z(q: F.NQ, +t: String) -> {F.cont(q, SCon{'0', t}) == F.cnext(F.ndc(q, F.ncls('0')), q, '0', t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      F.appPrep('0', spa(digits(t)), nfrac(spt(digits(t))))
+    case QF0{}:
+      F.appPrep('0', spa(digits(t)), nexp(spt(digits(t))))
+    case QF{}:
+      F.appPrep('0', spa(digits(t)), nexp(spt(digits(t))))
+    case QE0{}:
+      Equal.sym(Maybe<&2, SP>, prepM('0', Some{digits(t)}), Some{SP{SCon{'0', spa(digits(t))}, spt(digits(t))}}, F.prepSome('0', digits(t)))
+    case QES{}:
+      Equal.sym(Maybe<&2, SP>, prepM('0', Some{digits(t)}), Some{SP{SCon{'0', spa(digits(t))}, spt(digits(t))}}, F.prepSome('0', digits(t)))
+    case QE{}:
+      Equal.sym(Maybe<&2, SP>, prepM('0', Some{digits(t)}), Some{SP{SCon{'0', spa(digits(t))}, spt(digits(t))}}, F.prepSome('0', digits(t)))
+    case QX{}:
+      {==}
+
+def F.cs.sub(-q: F.NQ, -x: Char, -c: Char, -t: String, +e: {x == c : Char}, +b: {F.cont(q, SCon{x, t}) == F.cnext(F.ndc(q, F.ncls(x)), q, x, t) : Maybe<&2, SP>}) -> {F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}:
+  %e : {F.cont(q, SCon{_, t}) == F.cnext(F.ndc(q, F.ncls(_)), q, _, t) : Maybe<&2, SP>}
+  b
+
+def F.cs.d(q: F.NQ, +c: Char, +t: String, +hm: {Char.is_eq('-', c) == False{} : Bool}, +hp: {Char.is_eq('+', c) == False{} : Bool}, +hd: {Char.is_eq('.', c) == False{} : Bool}, +he: {ise(c) == False{} : Bool}, +h0: {Char.is_eq('0', c) == False{} : Bool}, +h9: {is19(c) == True{} : Bool}) -> {F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QS{}, SCon{c, t}) == F.cnext(F.ndc(QS{}, _), QS{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, num_scan(SCon{c, t}), nint(SCon{c, t}), F.numF(c, t, hm)) : {_ == prepM(c, nint2(digits(t))) : Maybe<&2, SP>}
+    F.nintD(c, t, h0, h9)
+    case QM{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QM{}, SCon{c, t}) == F.cnext(F.ndc(QM{}, _), QM{}, c, t) : Maybe<&2, SP>}
+    F.nintD(c, t, h0, h9)
+    case QZ{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QZ{}, SCon{c, t}) == F.cnext(F.ndc(QZ{}, _), QZ{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, nfrac(SCon{c, t}), nexp(SCon{c, t}), F.nfracF(c, t, hd)) : {_ == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    F.nexpF(c, t, he)
+    case QI{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QI{}, SCon{c, t}) == F.cnext(F.ndc(QI{}, _), QI{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), prepS(c, digits(t)), F.digT(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), True{}, F.isdig0(c), F.orFT(Char.is_eq('0', c), is19(c), h0, h9)))) : {nint2(_) == prepM(c, nint2(digits(t))) : Maybe<&2, SP>}
+    F.appPrep(c, spa(digits(t)), nfrac(spt(digits(t))))
+    case QF0{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QF0{}, SCon{c, t}) == F.cnext(F.ndc(QF0{}, _), QF0{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), prepS(c, digits(t)), F.digT(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), True{}, F.isdig0(c), F.orFT(Char.is_eq('0', c), is19(c), h0, h9)))) : {nfrac2(dig1(_)) == prepM(c, nfrac2(Some{digits(t)})) : Maybe<&2, SP>}
+    F.appPrep(c, spa(digits(t)), nexp(spt(digits(t))))
+    case QF{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QF{}, SCon{c, t}) == F.cnext(F.ndc(QF{}, _), QF{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), prepS(c, digits(t)), F.digT(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), True{}, F.isdig0(c), F.orFT(Char.is_eq('0', c), is19(c), h0, h9)))) : {nfrac2(Some{_}) == prepM(c, nfrac2(Some{digits(t)})) : Maybe<&2, SP>}
+    F.appPrep(c, spa(digits(t)), nexp(spt(digits(t))))
+    case QE0{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QE0{}, SCon{c, t}) == F.cnext(F.ndc(QE0{}, _), QE0{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, nsign(SCon{c, t}), dig1(digits(SCon{c, t})), F.nsignF(c, t, F.orFF(Char.is_eq('-', c), Bool.or(Char.is_eq('+', c), False{}), hm, F.orFF(Char.is_eq('+', c), False{}, hp, {==})))) : {_ == prepM(c, Some{digits(t)}) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), prepS(c, digits(t)), F.digT(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), True{}, F.isdig0(c), F.orFT(Char.is_eq('0', c), is19(c), h0, h9)))) : {dig1(_) == prepM(c, Some{digits(t)}) : Maybe<&2, SP>}
+    Equal.sym(Maybe<&2, SP>, prepM(c, Some{digits(t)}), Some{SP{SCon{c, spa(digits(t))}, spt(digits(t))}}, F.prepSome(c, digits(t)))
+    case QES{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QES{}, SCon{c, t}) == F.cnext(F.ndc(QES{}, _), QES{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), prepS(c, digits(t)), F.digT(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), True{}, F.isdig0(c), F.orFT(Char.is_eq('0', c), is19(c), h0, h9)))) : {dig1(_) == prepM(c, Some{digits(t)}) : Maybe<&2, SP>}
+    Equal.sym(Maybe<&2, SP>, prepM(c, Some{digits(t)}), Some{SP{SCon{c, spa(digits(t))}, spt(digits(t))}}, F.prepSome(c, digits(t)))
+    case QE{}:
+    %Equal.sym(F.CC, F.ncls(c), CD{}, F.nclsD(c, h0, h9)) : {F.cont(QE{}, SCon{c, t}) == F.cnext(F.ndc(QE{}, _), QE{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), prepS(c, digits(t)), F.digT(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), True{}, F.isdig0(c), F.orFT(Char.is_eq('0', c), is19(c), h0, h9)))) : {Some{_} == prepM(c, Some{digits(t)}) : Maybe<&2, SP>}
+    Equal.sym(Maybe<&2, SP>, prepM(c, Some{digits(t)}), Some{SP{SCon{c, spa(digits(t))}, spt(digits(t))}}, F.prepSome(c, digits(t)))
+    case QX{}:
+      {==}
+
+def F.cs.x(q: F.NQ, +c: Char, +t: String, +hm: {Char.is_eq('-', c) == False{} : Bool}, +hp: {Char.is_eq('+', c) == False{} : Bool}, +hd: {Char.is_eq('.', c) == False{} : Bool}, +he: {ise(c) == False{} : Bool}, +h0: {Char.is_eq('0', c) == False{} : Bool}, +h9: {is19(c) == False{} : Bool}) -> {F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}:
+  match q:
+    case QS{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QS{}, SCon{c, t}) == F.cnext(F.ndc(QS{}, _), QS{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, num_scan(SCon{c, t}), nint(SCon{c, t}), F.numF(c, t, hm)) : {_ == None{} : Maybe<&2, SP>}
+    F.nintX(c, t, h0, h9)
+    case QM{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QM{}, SCon{c, t}) == F.cnext(F.ndc(QM{}, _), QM{}, c, t) : Maybe<&2, SP>}
+    F.nintX(c, t, h0, h9)
+    case QZ{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QZ{}, SCon{c, t}) == F.cnext(F.ndc(QZ{}, _), QZ{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, nfrac(SCon{c, t}), nexp(SCon{c, t}), F.nfracF(c, t, hd)) : {_ == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    F.nexpF(c, t, he)
+    case QI{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QI{}, SCon{c, t}) == F.cnext(F.ndc(QI{}, _), QI{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), SP{SNil{}, SCon{c, t}}, F.digF(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), False{}, F.isdig0(c), F.orFF(Char.is_eq('0', c), is19(c), h0, h9)))) : {nint2(_) == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, appM(SNil{}, nfrac(SCon{c, t})), nfrac(SCon{c, t}), F.appNil(nfrac(SCon{c, t}))) : {_ == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, nfrac(SCon{c, t}), nexp(SCon{c, t}), F.nfracF(c, t, hd)) : {_ == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    F.nexpF(c, t, he)
+    case QF0{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QF0{}, SCon{c, t}) == F.cnext(F.ndc(QF0{}, _), QF0{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), SP{SNil{}, SCon{c, t}}, F.digF(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), False{}, F.isdig0(c), F.orFF(Char.is_eq('0', c), is19(c), h0, h9)))) : {nfrac2(dig1(_)) == None{} : Maybe<&2, SP>}
+    {==}
+    case QF{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QF{}, SCon{c, t}) == F.cnext(F.ndc(QF{}, _), QF{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), SP{SNil{}, SCon{c, t}}, F.digF(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), False{}, F.isdig0(c), F.orFF(Char.is_eq('0', c), is19(c), h0, h9)))) : {nfrac2(Some{_}) == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, appM(SNil{}, nexp(SCon{c, t})), nexp(SCon{c, t}), F.appNil(nexp(SCon{c, t}))) : {_ == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    F.nexpF(c, t, he)
+    case QE0{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QE0{}, SCon{c, t}) == F.cnext(F.ndc(QE0{}, _), QE0{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(Maybe<&2, SP>, nsign(SCon{c, t}), dig1(digits(SCon{c, t})), F.nsignF(c, t, F.orFF(Char.is_eq('-', c), Bool.or(Char.is_eq('+', c), False{}), hm, F.orFF(Char.is_eq('+', c), False{}, hp, {==})))) : {_ == None{} : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), SP{SNil{}, SCon{c, t}}, F.digF(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), False{}, F.isdig0(c), F.orFF(Char.is_eq('0', c), is19(c), h0, h9)))) : {dig1(_) == None{} : Maybe<&2, SP>}
+    {==}
+    case QES{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QES{}, SCon{c, t}) == F.cnext(F.ndc(QES{}, _), QES{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), SP{SNil{}, SCon{c, t}}, F.digF(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), False{}, F.isdig0(c), F.orFF(Char.is_eq('0', c), is19(c), h0, h9)))) : {dig1(_) == None{} : Maybe<&2, SP>}
+    {==}
+    case QE{}:
+    %Equal.sym(F.CC, F.ncls(c), CX{}, F.nclsX(c, h0, h9, hd, he, hp, hm)) : {F.cont(QE{}, SCon{c, t}) == F.cnext(F.ndc(QE{}, _), QE{}, c, t) : Maybe<&2, SP>}
+    %Equal.sym(SP, digits(SCon{c, t}), SP{SNil{}, SCon{c, t}}, F.digF(c, t, Equal.trans(Bool, isdig(c), Bool.or(Char.is_eq('0', c), is19(c)), False{}, F.isdig0(c), F.orFF(Char.is_eq('0', c), is19(c), h0, h9)))) : {Some{_} == Some{SP{SNil{}, SCon{c, t}}} : Maybe<&2, SP>}
+    {==}
+    case QX{}:
+      {==}
+
+# The scanner and num_scan move alike on every character.
+def F.cs(+q: F.NQ, +c: Char, +t: String) -> {F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}:
+  bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, Char.is_eq('-', c), +k => F.cs.sub(q, '-', c, t, char_eq('-', c, k), F.cs.m(q, t)), +hm =>
+    bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, Char.is_eq('+', c), +k => F.cs.sub(q, '+', c, t, char_eq('+', c, k), F.cs.p(q, t)), +hp =>
+      bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, Char.is_eq('.', c), +k => F.cs.sub(q, '.', c, t, char_eq('.', c, k), F.cs.dot(q, t)), +hd =>
+        bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, Char.is_eq('e', c), +k => F.cs.sub(q, 'e', c, t, char_eq('e', c, k), F.cs.e(q, t)), +he1 =>
+          bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, Char.is_eq('E', c), +k => F.cs.sub(q, 'E', c, t, char_eq('E', c, k), F.cs.E2(q, t)), +he2 =>
+            bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, Char.is_eq('0', c), +k => F.cs.sub(q, '0', c, t, char_eq('0', c, k), F.cs.z(q, t)), +h0 =>
+              bcase({F.cont(q, SCon{c, t}) == F.cnext(F.ndc(q, F.ncls(c)), q, c, t) : Maybe<&2, SP>}, is19(c), +h9 => F.cs.d(q, c, t, hm, hp, hd, F.orFF(Char.is_eq('e', c), Bool.or(Char.is_eq('E', c), False{}), he1, F.orFF(Char.is_eq('E', c), False{}, he2, {==})), h0, h9), +h9 => F.cs.x(q, c, t, hm, hp, hd, F.orFF(Char.is_eq('e', c), Bool.or(Char.is_eq('E', c), False{}), he1, F.orFF(Char.is_eq('E', c), False{}, he2, {==})), h0, h9))))))))
+
+def F.okPrep(+c: Char, m: Maybe<&2, SP>) -> {okend(prepM(c, m)) == okend(m) : Bool}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case SP{a, t}:
+          {==}
+
+def F.naccX(s: String) -> {F.nacc(s, QX{}) == False{} : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, t}:
+      F.naccX(t)
+
+def F.okEnd(b: Bool, +c: Char, +t: String) -> {False{} == okend(F.cend(b, c, t)) : Bool}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.dfa2(q2: F.NQ, +q: F.NQ, +c: Char, +t: String, ih: @r:F.NQ -> {F.nacc(t, r) == okend(F.cont(r, t)) : Bool}) -> {F.nacc(t, q2) == okend(F.cnext(q2, q, c, t)) : Bool}:
+  match q2:
+    case QX{}:
+      Equal.trans(Bool, F.nacc(t, QX{}), False{}, okend(F.cend(F.nend(q), c, t)), F.naccX(t), F.okEnd(F.nend(q), c, t))
+    case QS{}:
+      Equal.trans(Bool, F.nacc(t, QS{}), okend(F.cont(QS{}, t)), okend(prepM(c, F.cont(QS{}, t))), ih(QS{}), Equal.sym(Bool, okend(prepM(c, F.cont(QS{}, t))), okend(F.cont(QS{}, t)), F.okPrep(c, F.cont(QS{}, t))))
+    case QM{}:
+      Equal.trans(Bool, F.nacc(t, QM{}), okend(F.cont(QM{}, t)), okend(prepM(c, F.cont(QM{}, t))), ih(QM{}), Equal.sym(Bool, okend(prepM(c, F.cont(QM{}, t))), okend(F.cont(QM{}, t)), F.okPrep(c, F.cont(QM{}, t))))
+    case QZ{}:
+      Equal.trans(Bool, F.nacc(t, QZ{}), okend(F.cont(QZ{}, t)), okend(prepM(c, F.cont(QZ{}, t))), ih(QZ{}), Equal.sym(Bool, okend(prepM(c, F.cont(QZ{}, t))), okend(F.cont(QZ{}, t)), F.okPrep(c, F.cont(QZ{}, t))))
+    case QI{}:
+      Equal.trans(Bool, F.nacc(t, QI{}), okend(F.cont(QI{}, t)), okend(prepM(c, F.cont(QI{}, t))), ih(QI{}), Equal.sym(Bool, okend(prepM(c, F.cont(QI{}, t))), okend(F.cont(QI{}, t)), F.okPrep(c, F.cont(QI{}, t))))
+    case QF0{}:
+      Equal.trans(Bool, F.nacc(t, QF0{}), okend(F.cont(QF0{}, t)), okend(prepM(c, F.cont(QF0{}, t))), ih(QF0{}), Equal.sym(Bool, okend(prepM(c, F.cont(QF0{}, t))), okend(F.cont(QF0{}, t)), F.okPrep(c, F.cont(QF0{}, t))))
+    case QF{}:
+      Equal.trans(Bool, F.nacc(t, QF{}), okend(F.cont(QF{}, t)), okend(prepM(c, F.cont(QF{}, t))), ih(QF{}), Equal.sym(Bool, okend(prepM(c, F.cont(QF{}, t))), okend(F.cont(QF{}, t)), F.okPrep(c, F.cont(QF{}, t))))
+    case QE0{}:
+      Equal.trans(Bool, F.nacc(t, QE0{}), okend(F.cont(QE0{}, t)), okend(prepM(c, F.cont(QE0{}, t))), ih(QE0{}), Equal.sym(Bool, okend(prepM(c, F.cont(QE0{}, t))), okend(F.cont(QE0{}, t)), F.okPrep(c, F.cont(QE0{}, t))))
+    case QES{}:
+      Equal.trans(Bool, F.nacc(t, QES{}), okend(F.cont(QES{}, t)), okend(prepM(c, F.cont(QES{}, t))), ih(QES{}), Equal.sym(Bool, okend(prepM(c, F.cont(QES{}, t))), okend(F.cont(QES{}, t)), F.okPrep(c, F.cont(QES{}, t))))
+    case QE{}:
+      Equal.trans(Bool, F.nacc(t, QE{}), okend(F.cont(QE{}, t)), okend(prepM(c, F.cont(QE{}, t))), ih(QE{}), Equal.sym(Bool, okend(prepM(c, F.cont(QE{}, t))), okend(F.cont(QE{}, t)), F.okPrep(c, F.cont(QE{}, t))))
+
+
+def F.dfa0(q: F.NQ) -> {F.nacc(SNil{}, q) == okend(F.cont(q, SNil{})) : Bool}:
+  match q:
+    case QS{}:
+      {==}
+    case QM{}:
+      {==}
+    case QZ{}:
+      {==}
+    case QI{}:
+      {==}
+    case QF0{}:
+      {==}
+    case QF{}:
+      {==}
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      {==}
+    case QX{}:
+      {==}
+
+# The scanner accepts what num_scan reads to the end.
+def F.dfa(s: String, +q: F.NQ) -> {F.nacc(s, q) == okend(F.cont(q, s)) : Bool}:
+  match s:
+    case SNil{}:
+      F.dfa0(q)
+    case SCon{+c, +t}:
+      %Equal.sym(Maybe<&2, SP>, F.cont(q, SCon{c, t}), F.cnext(F.ndc(q, F.ncls(c)), q, c, t), F.cs(q, c, t)) : {F.nacc(SCon{c, t}, q) == okend(_) : Bool}
+      F.dfa2(F.ndc(q, F.ncls(c)), q, c, t, r => F.dfa(t, r))
+
+def F.numBody() -> ABNF.Rule:
+  ABNF.seq([ABNF.opt(ABNF.ref("minus")), ABNF.ref("int"), ABNF.opt(ABNF.ref("frac")), ABNF.opt(ABNF.ref("exp"))])
+
+# The scanner accepts exactly the numbers.
+def F.numEq(+n: String) -> {F.nacc(n, QS{}) == ABNF.matches.era(Laws.grammar, "number", n) : Bool}:
+  Equal.trans(Bool, F.nacc(n, QS{}), numok(n), ABNF.matches.era(Laws.grammar, "number", n), F.dfa(n, QS{}),
+    beq(numok(n), ABNF.matches.era(Laws.grammar, "number", n),
+      +h => tt(ABNF.matches.era(toList(GRAMMAR), "number", n), ABNF.check.era(ABNF.full(toList(GRAMMAR)), ABNF.ref("number"), n), mtEq(GRAMMAR, {==}, "number", n, ABNF.matches(toList(GRAMMAR), "number", n), {==}),
+        MBi(GRAMMAR, {==}, "number", F.numBody(), n, {==}, numK(GRAMMAR, {==}, n, h))),
+      +h => numokOf(GRAMMAR, {==}, n, MBe(GRAMMAR, {==}, "number", F.numBody(), n, {==}, mt(GRAMMAR, {==}, "number", n, h)))))
+
+# Its two directions.
+def F.numA(+n: String, +h: {F.nacc(n, QS{}) == True{} : Bool}) -> {ABNF.matches.era(Laws.grammar, "number", n) == True{} : Bool}:
+  MBi(GRAMMAR, {==}, "number", F.numBody(), n, {==}, numK(GRAMMAR, {==}, n, tt.sym(F.nacc(n, QS{}), numok(n), F.dfa(n, QS{}), h)))
+
+def F.numN(+n: String, +h: {ABNF.matches.era(Laws.grammar, "number", n) == True{} : Bool}) -> {F.nacc(n, QS{}) == True{} : Bool}:
+  tt(F.nacc(n, QS{}), ABNF.matches.era(Laws.grammar, "number", n), F.numEq(n), h)
+
+
 # =====================
 # Number, Text and Value
 # =====================
@@ -5576,8 +6250,16 @@ def tf(-C: Type, -b: Bool, h1: {b == True{} : Bool}, h2: {b == False{} : Bool}) 
   Empty.absurd(C, bne(Equal.trans(Bool, True{}, b, False{}, Equal.sym(Bool, b, True{}, h1), h2)))
 
 # A number, stored as its text and the proof that it is one.
+# A number is valid when the scanner reads all of it: F.numEq shows that this is
+# what the grammar answers.
+def Laws.Number.valid(n):
+  F.nacc(n, QS{})
+
+def Laws.Number.valid.ok(n):
+  F.numEq(n)
+
 type NumT is Type:
-  NMk{n: String, h: {ABNF.matches.era(Laws.grammar, "number", n) == True{} : Bool}}
+  NMk{n: String, h: {Laws.Number.valid(n) == True{} : Bool}}
 
 def Laws.Number():
   NumT
@@ -5593,7 +6275,7 @@ def Laws.Number.rec(P, f, x):
 def Laws.Number.rec.make(P, f, n, h):
   {==}
 
-def numTry(n: String, b: Bool, e: {ABNF.matches.era(Laws.grammar, "number", n) == b : Bool}) -> String | NumT:
+def numTry(n: String, b: Bool, e: {Laws.Number.valid(n) == b : Bool}) -> String | NumT:
   match b:
     case True{}:
       Inr{NMk{n, e}}
@@ -5602,33 +6284,33 @@ def numTry(n: String, b: Bool, e: {ABNF.matches.era(Laws.grammar, "number", n) =
 
 def Laws.Number.make.try(n):
   +x = n
-  numTry(x, ABNF.matches.era(Laws.grammar, "number", x), {==})
+  numTry(x, Laws.Number.valid(x), {==})
 
-def numTry.valid(+n: String, b: Bool, +e: {ABNF.matches.era(Laws.grammar, "number", n) == b : Bool}, +h: {ABNF.matches.era(Laws.grammar, "number", n) == True{} : Bool})
+def numTry.valid(+n: String, b: Bool, +e: {Laws.Number.valid(n) == b : Bool}, +h: {Laws.Number.valid(n) == True{} : Bool})
   -> {numTry(n, b, e) == Inr{NMk{n, h}} : String | NumT}:
   match b:
     case True{}:
-      Equal.cong({ABNF.matches.era(Laws.grammar, "number", n) == True{} : Bool}, String | NumT, p => Inr{NMk{n, p}}, e, h, buip(ABNF.matches.era(Laws.grammar, "number", n), True{}, e, h))
+      Equal.cong({Laws.Number.valid(n) == True{} : Bool}, String | NumT, p => Inr{NMk{n, p}}, e, h, buip(Laws.Number.valid(n), True{}, e, h))
     case False{}:
-      tf({Inl{n} == Inr{NMk{n, h}} : String | NumT}, ABNF.matches.era(Laws.grammar, "number", n), h, e)
+      tf({Inl{n} == Inr{NMk{n, h}} : String | NumT}, Laws.Number.valid(n), h, e)
 
 def Laws.Number.make.try.valid(n, h):
   +n = n
   +h = h
-  numTry.valid(n, ABNF.matches.era(Laws.grammar, "number", n), {==}, h)
+  numTry.valid(n, Laws.Number.valid(n), {==}, h)
 
-def numTry.invalid(+n: String, b: Bool, +e: {ABNF.matches.era(Laws.grammar, "number", n) == b : Bool}, +h: {ABNF.matches.era(Laws.grammar, "number", n) == False{} : Bool})
+def numTry.invalid(+n: String, b: Bool, +e: {Laws.Number.valid(n) == b : Bool}, +h: {Laws.Number.valid(n) == False{} : Bool})
   -> {numTry(n, b, e) == Inl{n} : String | NumT}:
   match b:
     case True{}:
-      tf({Inr{NMk{n, e}} == Inl{n} : String | NumT}, ABNF.matches.era(Laws.grammar, "number", n), e, h)
+      tf({Inr{NMk{n, e}} == Inl{n} : String | NumT}, Laws.Number.valid(n), e, h)
     case False{}:
       {==}
 
 def Laws.Number.make.try.invalid(n, h):
   +n = n
   +h = h
-  numTry.invalid(n, ABNF.matches.era(Laws.grammar, "number", n), {==}, h)
+  numTry.invalid(n, Laws.Number.valid(n), {==}, h)
 
 def numMaybe(e: String | NumT) -> Maybe<NumT>:
   match e:
@@ -5650,7 +6332,22 @@ def Laws.Number.make.try.era.invalid(n, str, h):
 
 # A text, stored as its characters and the proof that they are Unicode.
 type TxtT is Type:
-  TMk{s: String, h: {Extra.String.is_unicode.era(s) == True{} : Bool}}
+  TMk{s: String, h: {F.uall(s) == True{} : Bool}}
+
+def Laws.Text.valid(s):
+  F.uall(s)
+
+# F.uall says what base-extra's is_unicode.era says, by its laws.
+def F.uallEq2(+s: String, p: String & Bool, +e: {Extra.String.is_unicode(s) == p : String & Bool}) -> {F.uall(s) == Extra.String.is_unicode.era(s) : Bool}:
+  match p:
+    case (str, +val):
+      Equal.trans(Bool, F.uall(s), val, Extra.String.is_unicode.era(s),
+        Equal.sym(Bool, val, F.uall(s), F.snd2({str == s : String}, {val == List.all(~&2, ~Char, ~(c2 => (Char.to_u32(c2) <= 1114111 : U32)), String.to_list(s)) : Bool}, Extra.String.is_unicode.ok(s, str, val, e))),
+        Extra.String.is_unicode.era.ok(s, str, val, e))
+
+def Laws.Text.valid.ok(s):
+  +s = s
+  F.uallEq2(s, Extra.String.is_unicode(s), {==})
 
 def Laws.Text():
   TxtT
@@ -5666,7 +6363,7 @@ def Laws.Text.rec(P, f, x):
 def Laws.Text.rec.make(P, f, s, h):
   {==}
 
-def txtTry(s: String, b: Bool, e: {Extra.String.is_unicode.era(s) == b : Bool}) -> String | TxtT:
+def txtTry(s: String, b: Bool, e: {F.uall(s) == b : Bool}) -> String | TxtT:
   match b:
     case True{}:
       Inr{TMk{s, e}}
@@ -5675,33 +6372,33 @@ def txtTry(s: String, b: Bool, e: {Extra.String.is_unicode.era(s) == b : Bool}) 
 
 def Laws.Text.make.try(s):
   +x = s
-  txtTry(x, Extra.String.is_unicode.era(x), {==})
+  txtTry(x, F.uall(x), {==})
 
-def txtTry.valid(+s: String, b: Bool, +e: {Extra.String.is_unicode.era(s) == b : Bool}, +h: {Extra.String.is_unicode.era(s) == True{} : Bool})
+def txtTry.valid(+s: String, b: Bool, +e: {F.uall(s) == b : Bool}, +h: {F.uall(s) == True{} : Bool})
   -> {txtTry(s, b, e) == Inr{TMk{s, h}} : String | TxtT}:
   match b:
     case True{}:
-      Equal.cong({Extra.String.is_unicode.era(s) == True{} : Bool}, String | TxtT, p => Inr{TMk{s, p}}, e, h, buip(Extra.String.is_unicode.era(s), True{}, e, h))
+      Equal.cong({F.uall(s) == True{} : Bool}, String | TxtT, p => Inr{TMk{s, p}}, e, h, buip(F.uall(s), True{}, e, h))
     case False{}:
-      tf({Inl{s} == Inr{TMk{s, h}} : String | TxtT}, Extra.String.is_unicode.era(s), h, e)
+      tf({Inl{s} == Inr{TMk{s, h}} : String | TxtT}, F.uall(s), h, e)
 
 def Laws.Text.make.try.valid(s, h):
   +s = s
   +h = h
-  txtTry.valid(s, Extra.String.is_unicode.era(s), {==}, h)
+  txtTry.valid(s, F.uall(s), {==}, h)
 
-def txtTry.invalid(+s: String, b: Bool, +e: {Extra.String.is_unicode.era(s) == b : Bool}, +h: {Extra.String.is_unicode.era(s) == False{} : Bool})
+def txtTry.invalid(+s: String, b: Bool, +e: {F.uall(s) == b : Bool}, +h: {F.uall(s) == False{} : Bool})
   -> {txtTry(s, b, e) == Inl{s} : String | TxtT}:
   match b:
     case True{}:
-      tf({Inr{TMk{s, e}} == Inl{s} : String | TxtT}, Extra.String.is_unicode.era(s), e, h)
+      tf({Inr{TMk{s, e}} == Inl{s} : String | TxtT}, F.uall(s), e, h)
     case False{}:
       {==}
 
 def Laws.Text.make.try.invalid(s, h):
   +s = s
   +h = h
-  txtTry.invalid(s, Extra.String.is_unicode.era(s), {==}, h)
+  txtTry.invalid(s, F.uall(s), {==}, h)
 
 def txtMaybe(e: String | TxtT) -> Maybe<TxtT>:
   match e:
@@ -5807,31 +6504,31 @@ def vgo(~P: @-x:V -> Type, ~on_null: P(VNull{}), ~on_bool: @b:Bool -> P(VBool{b}
         case []:
           match m:
             case VRec{}:
-              on_array([], EP.ANil{{==}})
+              on_array([], Extra.List.All.nil(~V, ~P))
             case VAll{}:
-              EP.ANil{{==}}
+              Extra.List.All.nil(~V, ~P)
         case h <> t:
           match m:
             case VRec{}:
-              on_array(h <> t, EP.ACons{h, t, {==}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{})})
+              on_array(h <> t, Extra.List.All.cons(~V, ~P, h, t, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{})))
             case VAll{}:
-              EP.ACons{h, t, {==}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{})}
+              Extra.List.All.cons(~V, ~P, h, t, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{}))
     case VObj{o}:
       match o:
         case []:
           match m:
             case VRec{}:
-              on_object([], EP.ANil{{==}})
+              on_object([], Extra.List.All.nil(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P)))
             case VAll{}:
-              EP.ANil{{==}}
+              Extra.List.All.nil(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P))
         case h <> t:
           match h:
             case (k, x):
               match m:
                 case VRec{}:
-                  on_object((k, x) <> t, EP.ACons{(k, x), t, {==}, EP.PMake{k, x, {==}, EP.SMake{k, {==}}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{})})
+                  on_object((k, x) <> t, Extra.List.All.cons(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x), t, Extra.Pair.All.make(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P, k, x, Extra.Sing.make(~TxtT, k), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{})))
                 case VAll{}:
-                  EP.ACons{(k, x), t, {==}, EP.PMake{k, x, {==}, EP.SMake{k, {==}}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{})}
+                  Extra.List.All.cons(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x), t, Extra.Pair.All.make(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P, k, x, Extra.Sing.make(~TxtT, k), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{}))
 
 def Laws.Value.rec(P, on_null, on_bool, on_number, on_string, on_array, on_object, v):
   vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, v, VRec{})
@@ -5854,7 +6551,7 @@ def vgo.arr(~P: @-x:V -> Type, ~on_null: P(VNull{}), ~on_bool: @b:Bool -> P(VBoo
     case []:
       {==}
     case h <> t:
-      %vgo.arr(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {EP.ACons{h, t, {==}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{})} == EP.ACons{h, t, {==}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), _} : Extra.List.All(~V, ~P, h <> t)}
+      %vgo.arr(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {Extra.List.All.cons(~V, ~P, h, t, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{})) == Extra.List.All.cons(~V, ~P, h, t, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), _) : Extra.List.All(~V, ~P, h <> t)}
       {==}
 
 def Laws.Value.rec.array(P, on_null, on_bool, on_number, on_string, on_array, on_object, a):
@@ -5862,7 +6559,7 @@ def Laws.Value.rec.array(P, on_null, on_bool, on_number, on_string, on_array, on
     case []:
       {==}
     case h <> t:
-      %vgo.arr(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {on_array(h <> t, EP.ACons{h, t, {==}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{})}) == on_array(h <> t, EP.ACons{h, t, {==}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), _}) : P(VArr{h <> t})}
+      %vgo.arr(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {on_array(h <> t, Extra.List.All.cons(~V, ~P, h, t, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VArr{t}, VAll{}))) == on_array(h <> t, Extra.List.All.cons(~V, ~P, h, t, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, h, VRec{}), _)) : P(VArr{h <> t})}
       {==}
 
 # The walk over an object's members computes List.All.of.
@@ -5873,7 +6570,7 @@ def vgo.obj(~P: @-x:V -> Type, ~on_null: P(VNull{}), ~on_bool: @b:Bool -> P(VBoo
     case h <> t:
       match h:
         case (k, x):
-          %vgo.obj(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {EP.ACons{(k, x), t, {==}, EP.PMake{k, x, {==}, EP.SMake{k, {==}}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{})} == EP.ACons{(k, x), t, {==}, EP.PMake{k, x, {==}, EP.SMake{k, {==}}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})}, _} : Extra.List.All(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x) <> t)}
+          %vgo.obj(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {Extra.List.All.cons(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x), t, Extra.Pair.All.make(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P, k, x, Extra.Sing.make(~TxtT, k), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{})) == Extra.List.All.cons(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x), t, Extra.Pair.All.make(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P, k, x, Extra.Sing.make(~TxtT, k), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})), _) : Extra.List.All(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x) <> t)}
           {==}
 
 def Laws.Value.rec.object(P, on_null, on_bool, on_number, on_string, on_array, on_object, o):
@@ -5883,7 +6580,7 @@ def Laws.Value.rec.object(P, on_null, on_bool, on_number, on_string, on_array, o
     case h <> t:
       match h:
         case (k, x):
-          %vgo.obj(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {on_object((k, x) <> t, EP.ACons{(k, x), t, {==}, EP.PMake{k, x, {==}, EP.SMake{k, {==}}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{})}) == on_object((k, x) <> t, EP.ACons{(k, x), t, {==}, EP.PMake{k, x, {==}, EP.SMake{k, {==}}, vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})}, _}) : P(VObj{(k, x) <> t})}
+          %vgo.obj(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, t) : {on_object((k, x) <> t, Extra.List.All.cons(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x), t, Extra.Pair.All.make(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P, k, x, Extra.Sing.make(~TxtT, k), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, VObj{t}, VAll{}))) == on_object((k, x) <> t, Extra.List.All.cons(~(TxtT & V), ~Extra.Pair.All(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P), (k, x), t, Extra.Pair.All.make(~TxtT, ~V, ~Extra.Sing(~TxtT), ~P, k, x, Extra.Sing.make(~TxtT, k), vgo(~P, ~on_null, ~on_bool, ~on_number, ~on_string, ~on_array, ~on_object, x, VRec{})), _)) : P(VObj{(k, x) <> t})}
           {==}
 
 def Laws.Value.cases(P, on_null, on_bool, on_number, on_string, on_array, on_object, v):
@@ -6383,6 +7080,627 @@ def Laws.decode.escape(e, t, he):
   %escMM(GRAMMAR, {==}, e, hyp("escape", e, he)) : {Laws.decode.era(_ ++ "\"" ++ t) == "\"" ++ Laws.decode.era(t) : String} & {Laws.decode.era(_ ++ "\\" ++ t) == "\\" ++ Laws.decode.era(t) : String} & {Laws.decode.era(_ ++ "/" ++ t) == "/" ++ Laws.decode.era(t) : String} & {Laws.decode.era(_ ++ "b" ++ t) == SCon{Chr{8}, Laws.decode.era(t)} : String} & {Laws.decode.era(_ ++ "f" ++ t) == SCon{Chr{12}, Laws.decode.era(t)} : String} & {Laws.decode.era(_ ++ "n" ++ t) == SCon{Chr{10}, Laws.decode.era(t)} : String} & {Laws.decode.era(_ ++ "r" ++ t) == SCon{Chr{13}, Laws.decode.era(t)} : String} & {Laws.decode.era(_ ++ "t" ++ t) == SCon{Chr{9}, Laws.decode.era(t)} : String}
   ({==}, {==}, {==}, {==}, {==}, {==}, {==}, {==})
 
+# ============
+# Fast loading
+# ============
+#
+# load reads the text left to right, one character per step, and builds the
+# value directly. F.go is a flat loop: the state rides in registers, and each
+# character comes with its class for the state it is read in (F.SC), so go
+# matches the state and then the class. Lists, strings and numbers are built
+# reversed and turned around once they end. A number's text gets its proof
+# from the scanner; turning a string around checks that it is Unicode.
+#
+# F.step is go's step, and F.run the fold of F.step over a text: the proofs
+# below speak of F.run. Each step mirrors what the reference parser pv, its
+# scanners and dec do with the same character, tested by the same predicates.
+
+# Unicode
+# =======
+
+# The machine
+# ===========
+
+# The open arrays and objects, innermost first. KO holds the key of the value
+# being read, KKey the members of an object whose key is being read.
+type F.K is Type:
+  KTop{}
+  KA{xs: List<V>, k: F.K}
+  KO{key: TxtT, ms: List<(TxtT & V)>, k: F.K}
+  KKey{ms: List<(TxtT & V)>, k: F.K}
+
+# The states: V a value comes; A0 after [, AN after an element, O0 after {,
+# OK a key comes, ON after a member, Co a colon comes; S in a string, E after
+# its backslash, U in a \u with the digits ds read; Q, QE, QU the same after a
+# high surrogate hi; N in a number, in scanner state q; L in a literal; D after
+# the whole value; X failed. Element and member lists, and the text read so
+# far, are reversed.
+type F.S is Type:
+  ZV{k: F.K}
+  ZA0{k: F.K}
+  ZAN{xs: List<V>, k: F.K}
+  ZO0{k: F.K}
+  ZOK{ms: List<(TxtT & V)>, k: F.K}
+  ZON{ms: List<(TxtT & V)>, k: F.K}
+  ZCo{key: TxtT, ms: List<(TxtT & V)>, k: F.K}
+  ZS{acc: String, d: F.K}
+  ZE{acc: String, d: F.K}
+  ZU{acc: String, ds: String, d: F.K}
+  ZQ{acc: String, hi: U32, d: F.K}
+  ZQE{acc: String, hi: U32, d: F.K}
+  ZQU{acc: String, hi: U32, ds: String, d: F.K}
+  ZN{acc: String, q: F.NQ, k: F.K}
+  ZL{rest: String, v: V, k: F.K}
+  ZD{v: V}
+  ZX{}
+
+# A state, the character it reads next, and its class.
+type F.SC is Type:
+  ZC{st: F.S, cc: F.CC, c: Char}
+
+def F.iu(s: String) -> Bool:
+  F.uall(s)
+
+def F.cu(c: Char) -> Bool:
+  (Char.to_u32(c) <= 1114111 : U32)
+
+def F.iuCons(-c: Char, -t: String, hc: {F.cu(c) == True{} : Bool}, ht: {F.iu(t) == True{} : Bool}) -> {F.iu(SCon{c, t}) == True{} : Bool}:
+  %Equal.sym(Bool, F.cu(c), True{}, hc) : {List.all.if(u => List.all(~&2, ~Char, ~(x => (Char.to_u32(x) <= 1114111 : U32)), String.to_list(t)), _) == True{} : Bool}
+  ht
+
+# Classes
+# =======
+
+# Inside a string: the quote, the backslash, a character that stands for
+# itself, and one that may not appear.
+def F.sc3(b: Bool) -> F.CC:
+  match b:
+    case True{}:
+      CX{}
+    case False{}:
+      CBad{}
+
+def F.sc2(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CB{}
+    case False{}:
+      F.sc3(isunesc(c))
+
+def F.sc1(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CQ{}
+    case False{}:
+      F.sc2(Char.is_eq('\\', c), c)
+
+def F.scls(+c: Char) -> F.CC:
+  F.sc1(Char.is_eq('"', c), c)
+
+# Between tokens.
+def F.gc6(b: Bool) -> F.CC:
+  match b:
+    case True{}:
+      CQ{}
+    case False{}:
+      CX{}
+
+def F.gc5(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CRO{}
+    case False{}:
+      F.gc6(Char.is_eq('"', c))
+
+def F.gc4(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CRA{}
+    case False{}:
+      F.gc5(Char.is_eq('}', c), c)
+
+def F.gc3(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CColon{}
+    case False{}:
+      F.gc4(Char.is_eq(']', c), c)
+
+def F.gc2(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CComma{}
+    case False{}:
+      F.gc3(Char.is_eq(':', c), c)
+
+def F.gc1(b: Bool, +c: Char) -> F.CC:
+  match b:
+    case True{}:
+      CW{}
+    case False{}:
+      F.gc2(Char.is_eq(',', c), c)
+
+def F.gcls(+c: Char) -> F.CC:
+  F.gc1(isws(c), c)
+
+# Text and numbers
+# ================
+
+def F.rev(s: String, acc: String) -> String:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{c, t}:
+      F.rev(t, SCon{c, acc})
+
+def F.revl(-A: Type, s: List<A>, acc: List<A>) -> List<A>:
+  match s:
+    case []:
+      acc
+    case x <> t:
+      F.revl(A, t, x <> acc)
+
+def F.numMk2(b: Bool, +n: String, e: {F.nacc(n, QS{}) == b : Bool}) -> Maybe<V>:
+  match b:
+    case True{}:
+      Some{VNum{NMk{n, e}}}
+    case False{}:
+      None{}
+
+def F.numMk(+n: String) -> Maybe<V>:
+  F.numMk2(F.nacc(n, QS{}), n, {==})
+
+# The number whose characters are acc, last first.
+def F.numOf(acc: String) -> Maybe<V>:
+  F.numMk(F.rev(acc, SNil{}))
+
+# revU(t, out, c): c, then the characters of t, put in front of out one by
+# one, while each is Unicode.
+def F.revU(t: String, out: String, ho: {F.iu(out) == True{} : Bool}, +c: Char, b: Bool, eb: {F.cu(c) == b : Bool}) -> Maybe<TxtT>:
+  match t:
+    case SNil{}:
+      match b:
+        case True{}:
+          Some{TMk{SCon{c, out}, F.iuCons(c, out, eb, ho)}}
+        case False{}:
+          None{}
+    case SCon{+c2, t2}:
+      match b:
+        case True{}:
+          F.revU(t2, SCon{c, out}, F.iuCons(c, out, eb, ho), c2, F.cu(c2), {==})
+        case False{}:
+          None{}
+
+# The text whose characters are acc, last first.
+def F.textOf(acc: String) -> Maybe<TxtT>:
+  match acc:
+    case SNil{}:
+      Some{TMk{SNil{}, {==}}}
+    case SCon{+c, t}:
+      F.revU(t, SNil{}, {==}, c, F.cu(c), {==})
+
+def F.ccls(st: F.S, +c: Char) -> F.SC:
+  match st:
+    case ZS{acc, d}:
+      ZC{ZS{acc, d}, F.scls(c), c}
+    case ZQ{acc, hi, d}:
+      ZC{ZQ{acc, hi, d}, F.scls(c), c}
+    case ZN{acc, q, k}:
+      ZC{ZN{acc, q, k}, F.ncls(c), c}
+    case ZV{k}:
+      ZC{ZV{k}, F.gcls(c), c}
+    case ZA0{k}:
+      ZC{ZA0{k}, F.gcls(c), c}
+    case ZAN{xs, k}:
+      ZC{ZAN{xs, k}, F.gcls(c), c}
+    case ZO0{k}:
+      ZC{ZO0{k}, F.gcls(c), c}
+    case ZOK{ms, k}:
+      ZC{ZOK{ms, k}, F.gcls(c), c}
+    case ZON{ms, k}:
+      ZC{ZON{ms, k}, F.gcls(c), c}
+    case ZCo{key, ms, k}:
+      ZC{ZCo{key, ms, k}, F.gcls(c), c}
+    case ZD{v}:
+      ZC{ZD{v}, F.gcls(c), c}
+    case ZE{acc, d}:
+      ZC{ZE{acc, d}, CX{}, c}
+    case ZU{acc, ds, d}:
+      ZC{ZU{acc, ds, d}, CX{}, c}
+    case ZQE{acc, hi, d}:
+      ZC{ZQE{acc, hi, d}, CX{}, c}
+    case ZQU{acc, hi, ds, d}:
+      ZC{ZQU{acc, hi, ds, d}, CX{}, c}
+    case ZL{rest, v, k}:
+      ZC{ZL{rest, v, k}, CX{}, c}
+    case ZX{}:
+      ZC{ZX{}, CX{}, c}
+
+# Token edges
+# ===========
+
+def F.complete(v: V, k: F.K) -> F.S:
+  match k:
+    case KTop{}:
+      ZD{v}
+    case KA{xs, k}:
+      ZAN{v <> xs, k}
+    case KO{key, ms, k}:
+      ZON{(key, v) <> ms, k}
+    case KKey{ms, k}:
+      ZX{}
+
+# What follows a value, as step reads it.
+def F.after(st: F.S, cc: F.CC) -> F.S:
+  match st:
+    case ZAN{xs, k}:
+      match cc:
+        case CW{}:
+          ZAN{xs, k}
+        case CComma{}:
+          ZV{KA{xs, k}}
+        case CRA{}:
+          F.complete(VArr{F.revl(V, xs, [])}, k)
+        case _:
+          ZX{}
+    case ZON{ms, k}:
+      match cc:
+        case CW{}:
+          ZON{ms, k}
+        case CComma{}:
+          ZOK{ms, k}
+        case CRO{}:
+          F.complete(VObj{F.revl((TxtT & V), ms, [])}, k)
+        case _:
+          ZX{}
+    case ZD{v}:
+      match cc:
+        case CW{}:
+          ZD{v}
+        case _:
+          ZX{}
+    case _:
+      ZX{}
+
+def F.nfin2(m: Maybe<V>, k: F.K, +c: Char) -> F.S:
+  match m:
+    case Some{v}:
+      F.after(F.complete(v, k), F.gcls(c))
+    case None{}:
+      ZX{}
+
+# The number acc ends before c.
+def F.nfin(acc: String, k: F.K, +c: Char) -> F.S:
+  F.nfin2(F.numOf(acc), k, c)
+
+def F.skey(tx: TxtT, d: F.K) -> F.S:
+  match d:
+    case KKey{ms, k}:
+      ZCo{tx, ms, k}
+    case d:
+      F.complete(VStr{tx}, d)
+
+def F.sdone2(m: Maybe<TxtT>, d: F.K) -> F.S:
+  match m:
+    case None{}:
+      ZX{}
+    case Some{t}:
+      F.skey(t, d)
+
+# The string acc is read.
+def F.sdone(acc: String, d: F.K) -> F.S:
+  F.sdone2(F.textOf(acc), d)
+
+# After a \uXXXX, write pre and go on with the pending surrogate np, as dec.
+def F.dput(pre: String, np: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match np:
+    case None{}:
+      ZS{F.rev(pre, acc), d}
+    case Some{h}:
+      ZQ{F.rev(pre, acc), h, d}
+
+def F.emitA(p: Maybe<&2, U32>, acc: String) -> String:
+  match p:
+    case None{}:
+      acc
+    case Some{h}:
+      SCon{Chr{h}, acc}
+
+# The fourth digit c of a \u, after the digits a b e and the pending p.
+# Hex digits without String.contains: one reachable call that shares a string
+# makes every string node pay a reference count (sealing is per type).
+def F.hxsEq.b(b: Bool, +t: String, +c: Char, ih: @a:Bool -> {F.hxs(t, c, a) == Bool.or(a, String.contains(t, SCon{c, SNil{}})) : Bool}, a: Bool) -> {F.hxs(t, c, Bool.or(a, b)) == Bool.or(a, String.contains.if(t, SCon{c, SNil{}}, String.starts_with.go.if(SNil{}, t, b))) : Bool}:
+  match b:
+    case True{}:
+      match a:
+        case True{}:
+          ih(True{})
+        case False{}:
+          ih(True{})
+    case False{}:
+      match a:
+        case True{}:
+          ih(True{})
+        case False{}:
+          ih(False{})
+
+# The loop answers acc or what String.contains answers.
+def F.hxsEq(s: String, +c: Char, a: Bool) -> {F.hxs(s, c, a) == Bool.or(a, String.contains(s, SCon{c, SNil{}})) : Bool}:
+  match s:
+    case SNil{}:
+      match a:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+    case SCon{+h, +t}:
+      F.hxsEq.b(Char.is_eq(h, c), t, c, a2 => F.hxsEq(t, c, a2), a)
+
+def F.allHex.b(b: Bool, +t: String, ih: {List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(t)) == F.hexs(t) : Bool}) -> {List.all.if(u => List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(t)), b) == Bool.and(b, F.hexs(t)) : Bool}:
+  match b:
+    case True{}:
+      ih
+    case False{}:
+      {==}
+
+def F.allHex(s: String) -> {List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(s)) == F.hexs(s) : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      %F.hxsEq("0123456789abcdefABCDEF", c, False{}) : {List.all.if(u => List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(t)), _) == Bool.and(F.hx(c), F.hexs(t)) : Bool}
+      F.allHex.b(F.hx(c), t, F.allHex(t))
+
+def F.ishexS.eq(s: String) -> {F.ishexS(s) == Bool.and(Bool.not(String.is_empty(s)), List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(s))) : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      Equal.sym(Bool, List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(SCon{c, t})), F.hexs(SCon{c, t}), F.allHex(SCon{c, t}))
+
+def F.ishexEq2(+x: String, p: String & Bool, +e: {Extra.String.is_hex(x) == p : String & Bool}) -> {F.ishexS(x) == Extra.String.is_hex.era(x) : Bool}:
+  match p:
+    case (str, +val):
+      Equal.trans(Bool, F.ishexS(x), Bool.and(Bool.not(String.is_empty(x)), List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(x))), Extra.String.is_hex.era(x), F.ishexS.eq(x),
+        Equal.trans(Bool, Bool.and(Bool.not(String.is_empty(x)), List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(x))), val, Extra.String.is_hex.era(x), Equal.sym(Bool, val, Bool.and(Bool.not(String.is_empty(x)), List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(x))), F.snd2({str == x : String}, {val == Bool.and(Bool.not(String.is_empty(x)), List.all(~&2, ~Char, ~(c2 => String.contains("0123456789abcdefABCDEF", SCon{c2, SNil{}})), String.to_list(x))) : Bool}, Extra.String.is_hex.ok(x, str, val, e))), Extra.String.is_hex.era.ok(x, str, val, e)))
+
+def F.ishexEq(+x: String) -> {F.ishexS(x) == Extra.String.is_hex.era(x) : Bool}:
+  F.ishexEq2(x, Extra.String.is_hex(x), {==})
+
+# The code point, computed once.
+def F.dputV(+v: U32, +p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  F.dput(pre(v, p), np(v, p), acc, d)
+
+# Flat hex digits for \uXXXX. hexv reads digits with base-extra's dval, a
+# string search with closures; F.hd computes a digit's value directly.
+def F.hd(+c: Char) -> U32:
+  hexd(c)
+
+def F.hex4(+a: Char, +b: Char, +e: Char, +c: Char) -> U32:
+  ((((F.hd(a) * 16 + F.hd(b) : U32) * 16 + F.hd(e) : U32) * 16 + F.hd(c) : U32))
+
+def F.h4(+a: Char, +b: Char, +e: Char, +c: Char) -> Bool:
+  Bool.and(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(e), F.hx(c))))
+
+def F.andL(x: Bool, -y: Bool, +h: {Bool.and(x, y) == True{} : Bool}) -> {x == True{} : Bool}:
+  match x:
+    case True{}:
+      {==}
+    case False{}:
+      Empty.absurd({False{} == True{} : Bool}, false_ne_true(h))
+
+def F.andR(x: Bool, y: Bool, +h: {Bool.and(x, y) == True{} : Bool}) -> {y == True{} : Bool}:
+  match x:
+    case True{}:
+      h
+    case False{}:
+      Empty.absurd({y == True{} : Bool}, false_ne_true(h))
+
+def F.andT(x: Bool) -> {Bool.and(x, True{}) == x : Bool}:
+  match x:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.h4Eq(+a: Char, +b: Char, +e: Char, +c: Char) -> {F.ishexS(SCon{a, SCon{b, SCon{e, SCon{c, SNil{}}}}}) == F.h4(a, b, e, c) : Bool}:
+  Equal.cong(Bool, Bool, z => Bool.and(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(e), z))), Bool.and(F.hx(c), True{}), F.hx(c), F.andT(F.hx(c)))
+
+def F.hex4Eq(+a: Char, +b: Char, +e: Char, +c: Char) -> {F.hex4(a, b, e, c) == hexv(SCon{a, SCon{b, SCon{e, SCon{c, SNil{}}}}}, 0) : U32}:
+  {==}
+
+# When the four characters are hex digits, F.hex4 is their value.
+def F.hex4H(+a: Char, +b: Char, +e: Char, +c: Char, +h: {F.h4(a, b, e, c) == True{} : Bool}) -> {F.hex4(a, b, e, c) == hexv(SCon{a, SCon{b, SCon{e, SCon{c, SNil{}}}}}, 0) : U32}:
+  F.hex4Eq(a, b, e, c)
+
+# hexv and base-extra's to_hex.era agree on four hex digits, by to_hex's laws.
+# c is none of the characters of s.
+def F.NotIn(s: String, +c: Char) -> Type:
+  match s:
+    case SNil{}:
+      Unit
+    case SCon{h, t}:
+      {Char.is_eq(h, c) == False{} : Bool} & F.NotIn(t, c)
+
+def F.orF(a: Bool) -> {Bool.or(a, False{}) == a : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.hxsF(s: String, +c: Char, +a: Bool, ni: F.NotIn(s, c)) -> {F.hxs(s, c, a) == a : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{h, t}:
+      match ni:
+        case (+e, ni2):
+          %Equal.sym(Bool, Char.is_eq(h, c), False{}, e) : {F.hxs(t, c, Bool.or(a, _)) == a : Bool}
+          %Equal.sym(Bool, Bool.or(a, False{}), a, F.orF(a)) : {F.hxs(t, c, _) == a : Bool}
+          F.hxsF(t, c, a, ni2)
+
+def F.hdnL0(+c: Char, +k: {Char.is_eq('0', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('0', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL1(+c: Char, +k: {Char.is_eq('1', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('1', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL2(+c: Char, +k: {Char.is_eq('2', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('2', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL3(+c: Char, +k: {Char.is_eq('3', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('3', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL4(+c: Char, +k: {Char.is_eq('4', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('4', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL5(+c: Char, +k: {Char.is_eq('5', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('5', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL6(+c: Char, +k: {Char.is_eq('6', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('6', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL7(+c: Char, +k: {Char.is_eq('7', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('7', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL8(+c: Char, +k: {Char.is_eq('8', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('8', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL9(+c: Char, +k: {Char.is_eq('9', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('9', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL10(+c: Char, +k: {Char.is_eq('a', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('a', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL11(+c: Char, +k: {Char.is_eq('b', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('b', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL12(+c: Char, +k: {Char.is_eq('c', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('c', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL13(+c: Char, +k: {Char.is_eq('d', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('d', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL14(+c: Char, +k: {Char.is_eq('e', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('e', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL15(+c: Char, +k: {Char.is_eq('f', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('f', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL16(+c: Char, +k: {Char.is_eq('A', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('A', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL17(+c: Char, +k: {Char.is_eq('B', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('B', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL18(+c: Char, +k: {Char.is_eq('C', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('C', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL19(+c: Char, +k: {Char.is_eq('D', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('D', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL20(+c: Char, +k: {Char.is_eq('E', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('E', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+def F.hdnL21(+c: Char, +k: {Char.is_eq('F', c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  %char_eq('F', c, k) : {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(_))), 1n) == String.to_lower(SCon{_, SNil{}}) : String}
+  {==}
+
+# A hex digit's value, as to_hex.one and to_hex.snoc state it.
+def F.hdn(+c: Char, +h: {F.hx(c) == True{} : Bool}) -> {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}:
+  bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('0', c), +k => F.hdnL0(c, k), +n0 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('1', c), +k => F.hdnL1(c, k), +n1 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('2', c), +k => F.hdnL2(c, k), +n2 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('3', c), +k => F.hdnL3(c, k), +n3 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('4', c), +k => F.hdnL4(c, k), +n4 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('5', c), +k => F.hdnL5(c, k), +n5 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('6', c), +k => F.hdnL6(c, k), +n6 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('7', c), +k => F.hdnL7(c, k), +n7 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('8', c), +k => F.hdnL8(c, k), +n8 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('9', c), +k => F.hdnL9(c, k), +n9 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('a', c), +k => F.hdnL10(c, k), +n10 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('b', c), +k => F.hdnL11(c, k), +n11 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('c', c), +k => F.hdnL12(c, k), +n12 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('d', c), +k => F.hdnL13(c, k), +n13 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('e', c), +k => F.hdnL14(c, k), +n14 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('f', c), +k => F.hdnL15(c, k), +n15 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('A', c), +k => F.hdnL16(c, k), +n16 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('B', c), +k => F.hdnL17(c, k), +n17 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('C', c), +k => F.hdnL18(c, k), +n18 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('D', c), +k => F.hdnL19(c, k), +n19 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('E', c), +k => F.hdnL20(c, k), +n20 => bcase({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, Char.is_eq('F', c), +k => F.hdnL21(c, k), +n21 => Empty.absurd({String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, contra(F.hx(c), h, F.hxsF("0123456789abcdefABCDEF", c, False{}, (n0, (n1, (n2, (n3, (n4, (n5, (n6, (n7, (n8, (n9, (n10, (n11, (n12, (n13, (n14, (n15, (n16, (n17, (n18, (n19, (n20, (n21, Unit{})))))))))))))))))))))))))))))))))))))))))))))))
+
+# Every character of s is a hex digit.
+def F.AllHx(s: String) -> Type:
+  match s:
+    case SNil{}:
+      Unit
+    case SCon{+c, t}:
+      {F.hx(c) == True{} : Bool} & F.AllHx(t)
+
+def F.allHexs(s: String, all: F.AllHx(s)) -> {F.hexs(s) == True{} : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, t}:
+      match all:
+        case (+hc, rest):
+          %Equal.sym(Bool, F.hx(c), True{}, hc) : {Bool.and(_, F.hexs(t)) == True{} : Bool}
+          F.allHexs(t, rest)
+
+def F.isHexOf(+c: Char, +t: String, all: F.AllHx(SCon{c, t})) -> {Extra.String.is_hex.era(SCon{c, t}) == True{} : Bool}:
+  Equal.trans(Bool, Extra.String.is_hex.era(SCon{c, t}), F.ishexS(SCon{c, t}), True{}, Equal.sym(Bool, F.ishexS(SCon{c, t}), Extra.String.is_hex.era(SCon{c, t}), F.ishexEq(SCon{c, t})), F.allHexs(SCon{c, t}, all))
+
+def F.thOne2(+c: Char, +h: {Extra.String.is_hex.era(SCon{c, SNil{}}) == True{} : Bool}, +hn: {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, p: String & U32, +e: {Extra.String.to_hex(SCon{c, SNil{}}, h) == p : String & U32}) -> {Extra.String.to_hex.era(SCon{c, SNil{}}, h) == hexd(c) : U32}:
+  match p:
+    case (s, +v):
+      Equal.trans(U32, Extra.String.to_hex.era(SCon{c, SNil{}}, h), v, hexd(c), Equal.sym(U32, v, Extra.String.to_hex.era(SCon{c, SNil{}}, h), Extra.String.to_hex.era.ok(SCon{c, SNil{}}, h, s, v, e)), Extra.String.to_hex.one(SCon{c, SNil{}}, hexd(c), {==}, hn, h, s, v, e))
+
+def F.thOne(+c: Char, +h: {Extra.String.is_hex.era(SCon{c, SNil{}}) == True{} : Bool}, +hn: {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}) -> {Extra.String.to_hex.era(SCon{c, SNil{}}, h) == hexd(c) : U32}:
+  F.thOne2(c, h, hn, Extra.String.to_hex(SCon{c, SNil{}}, h), {==})
+
+def F.thSnoc2(+x: String, +c: Char, +hn: {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, +hx: {Extra.String.is_hex.era(x) == True{} : Bool}, +h: {Extra.String.is_hex.era(String.append(x, SCon{c, SNil{}})) == True{} : Bool}, p1: String & U32, +e1: {Extra.String.to_hex(x, hx) == p1 : String & U32}, p2: String & U32, +e2: {Extra.String.to_hex(String.append(x, SCon{c, SNil{}}), h) == p2 : String & U32}) -> {Extra.String.to_hex.era(String.append(x, SCon{c, SNil{}}), h) == (Extra.String.to_hex.era(x, hx) * 16 + hexd(c) : U32) : U32}:
+  match p1:
+    case (s1, +v1):
+      match p2:
+        case (s2, +v2):
+          Equal.trans(U32, Extra.String.to_hex.era(String.append(x, SCon{c, SNil{}}), h), v2, (Extra.String.to_hex.era(x, hx) * 16 + hexd(c) : U32),
+            Equal.sym(U32, v2, Extra.String.to_hex.era(String.append(x, SCon{c, SNil{}}), h), Extra.String.to_hex.era.ok(String.append(x, SCon{c, SNil{}}), h, s2, v2, e2)),
+            Equal.trans(U32, v2, (v1 * 16 + hexd(c) : U32), (Extra.String.to_hex.era(x, hx) * 16 + hexd(c) : U32),
+              Extra.String.to_hex.snoc(x, SCon{c, SNil{}}, hexd(c), {==}, hn, hx, s1, v1, e1, h, s2, v2, e2),
+              Equal.cong(U32, U32, z => (z * 16 + hexd(c) : U32), v1, Extra.String.to_hex.era(x, hx), Extra.String.to_hex.era.ok(x, hx, s1, v1, e1))))
+
+def F.thSnoc(+x: String, +c: Char, +hn: {String.take(String.drop("0123456789abcdef", U32.to_nat(hexd(c))), 1n) == String.to_lower(SCon{c, SNil{}}) : String}, +hx: {Extra.String.is_hex.era(x) == True{} : Bool}, +h: {Extra.String.is_hex.era(String.append(x, SCon{c, SNil{}})) == True{} : Bool}) -> {Extra.String.to_hex.era(String.append(x, SCon{c, SNil{}}), h) == (Extra.String.to_hex.era(x, hx) * 16 + hexd(c) : U32) : U32}:
+  F.thSnoc2(x, c, hn, hx, h, Extra.String.to_hex(x, hx), {==}, Extra.String.to_hex(String.append(x, SCon{c, SNil{}}), h), {==})
+
+# Four hex digits: hexv computes what to_hex.era gives.
+def F.TH4h(+a: Char, +b: Char, +c: Char, +d: Char, +ha: {F.hx(a) == True{} : Bool}, +hb: {F.hx(b) == True{} : Bool}, +hc: {F.hx(c) == True{} : Bool}, +hd: {F.hx(d) == True{} : Bool}, +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}) -> {hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0) == Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx) : U32}:
+  +h1 = F.isHexOf(a, SNil{}, (ha, Unit{}))
+  +h2 = F.isHexOf(a, SCon{b, SNil{}}, (ha, (hb, Unit{})))
+  +h3 = F.isHexOf(a, SCon{b, SCon{c, SNil{}}}, (ha, (hb, (hc, Unit{}))))
+  %Equal.sym(U32, Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx), (Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SNil{}}}}, h3) * 16 + hexd(d) : U32), F.thSnoc(SCon{a, SCon{b, SCon{c, SNil{}}}}, d, F.hdn(d, hd), h3, hx)) : {hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0) == _ : U32}
+  %Equal.sym(U32, Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SNil{}}}}, h3), (Extra.String.to_hex.era(SCon{a, SCon{b, SNil{}}}, h2) * 16 + hexd(c) : U32), F.thSnoc(SCon{a, SCon{b, SNil{}}}, c, F.hdn(c, hc), h2, h3)) : {hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0) == (_ * 16 + hexd(d) : U32) : U32}
+  %Equal.sym(U32, Extra.String.to_hex.era(SCon{a, SCon{b, SNil{}}}, h2), (Extra.String.to_hex.era(SCon{a, SNil{}}, h1) * 16 + hexd(b) : U32), F.thSnoc(SCon{a, SNil{}}, b, F.hdn(b, hb), h1, h2)) : {hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0) == ((_ * 16 + hexd(c) : U32) * 16 + hexd(d) : U32) : U32}
+  %Equal.sym(U32, Extra.String.to_hex.era(SCon{a, SNil{}}, h1), hexd(a), F.thOne(a, h1, F.hdn(a, ha))) : {hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0) == (((_ * 16 + hexd(b) : U32) * 16 + hexd(c) : U32) * 16 + hexd(d) : U32) : U32}
+  {==}
+
+def F.TH4(+a: Char, +b: Char, +c: Char, +d: Char, +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}) -> {hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0) == Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx) : U32}:
+  +h4 = Equal.trans(Bool, F.h4(a, b, c, d), F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), True{}, Equal.sym(Bool, F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), F.h4(a, b, c, d), F.h4Eq(a, b, c, d)), Equal.trans(Bool, F.ishexS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), True{}, F.ishexEq(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}), hx))
+  F.TH4h(a, b, c, d,
+    F.andL(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4),
+    F.andL(F.hx(b), Bool.and(F.hx(c), F.hx(d)), F.andR(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4)),
+    F.andL(F.hx(c), F.hx(d), F.andR(F.hx(b), Bool.and(F.hx(c), F.hx(d)), F.andR(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4))),
+    F.andR(F.hx(c), F.hx(d), F.andR(F.hx(b), Bool.and(F.hx(c), F.hx(d)), F.andR(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4))), hx)
+
+# A fact about to_hex.era of four hex digits is one about hexv.
+def F.toIS(+x: String, +h: {Extra.String.is_hex.era(x) == True{} : Bool}) -> {F.ishexS(x) == True{} : Bool}:
+  Equal.trans(Bool, F.ishexS(x), Extra.String.is_hex.era(x), True{}, F.ishexEq(x), h)
+
+def F.cvB(+a: Char, +b: Char, +c: Char, +d: Char, +hx: {Extra.String.is_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}) == True{} : Bool}, -f: U32 -> Bool, h: {f(Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx)) == True{} : Bool}) -> {f(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)) == True{} : Bool}:
+  Equal.trans(Bool, f(hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0)), f(Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx)), True{}, Equal.cong(U32, Bool, f, hexv(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, 0), Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx), F.TH4(a, b, c, d, hx)), h)
+
 def Laws.decode.u(e, x, t, he, hx, lx, hs):
   match x:
     case SNil{}:
@@ -6402,7 +7720,13 @@ def Laws.decode.u(e, x, t, he, hx, lx, hs):
                 case SCon{d, r4}:
                   match r4:
                     case SNil{}:
-                      decu2(GRAMMAR, {==}, e, SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t, a, b, c, d, {==}, hyp("escape", e, he), hx, hs)
+                      +a = a
+                      +b = b
+                      +c = c
+                      +d = d
+                      +hx = hx
+                      %F.TH4(a, b, c, d, hx) : {Laws.decode.era(e ++ "u" ++ SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}} ++ t) == SCon{Chr{_}, Laws.decode.era(t)} : String}
+                      decu2(GRAMMAR, {==}, e, SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t, a, b, c, d, {==}, hyp("escape", e, he), F.toIS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx), F.cvB(a, b, c, d, hx, v => Bool.or(U32.is_lt(v, 55296), U32.is_gt(v, 56319)), hs))
                     case SCon{f, r5}:
                       len4ne({Laws.decode.era(e ++ "u" ++ SCon{a, SCon{b, SCon{c, SCon{d, SCon{f, r5}}}}} ++ t) == SCon{Chr{Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SCon{f, r5}}}}}, hx)}, Laws.decode.era(t)} : String}, String.length(SCon{a, SCon{b, SCon{c, SCon{d, SCon{f, r5}}}}}), lx, {==})
 
@@ -6425,7 +7749,13 @@ def Laws.decode.high(e, x, t, he, hx, lx, hs, ht):
                 case SCon{d, r4}:
                   match r4:
                     case SNil{}:
-                      dech2(GRAMMAR, {==}, e, SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t, a, b, c, d, {==}, hyp("escape", e, he), hx, hs, ht)
+                      +a = a
+                      +b = b
+                      +c = c
+                      +d = d
+                      +hx = hx
+                      %F.TH4(a, b, c, d, hx) : {Laws.decode.era(e ++ "u" ++ SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}} ++ t) == SCon{Chr{_}, Laws.decode.era(t)} : String}
+                      dech2(GRAMMAR, {==}, e, SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, t, a, b, c, d, {==}, hyp("escape", e, he), F.toIS(SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}, hx), F.cvB(a, b, c, d, hx, v => Bool.and(U32.is_ge(v, 55296), U32.is_le(v, 56319)), hs), ht)
                     case SCon{f, r5}:
                       len4ne({Laws.decode.era(e ++ "u" ++ SCon{a, SCon{b, SCon{c, SCon{d, SCon{f, r5}}}}} ++ t) == SCon{Chr{Extra.String.to_hex.era(SCon{a, SCon{b, SCon{c, SCon{d, SCon{f, r5}}}}}, hx)}, Laws.decode.era(t)} : String}, String.length(SCon{a, SCon{b, SCon{c, SCon{d, SCon{f, r5}}}}}), lx, {==})
 
@@ -6466,7 +7796,19 @@ def Laws.decode.pair(e, x1, x2, t, he, hx1, lx1, hx2, lx2, hs1, hs2):
                                     case SCon{d2, r42}:
                                       match r42:
                                         case SNil{}:
-                                          decp2(GRAMMAR, {==}, e, SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t, a1, b1, c1, d1, {==}, a2, b2, c2, d2, {==}, hyp("escape", e, he), hx1, hx2, hs1, hs2)
+                                          +a1 = a1
+                                          +b1 = b1
+                                          +c1 = c1
+                                          +d1 = d1
+                                          +a2 = a2
+                                          +b2 = b2
+                                          +c2 = c2
+                                          +d2 = d2
+                                          +hx1 = hx1
+                                          +hx2 = hx2
+                                          %F.TH4(a1, b1, c1, d1, hx1) : {Laws.decode.era(e ++ "u" ++ SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} ++ e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}} ++ t) == SCon{Chr{(65536 + (_ - 55296) * 1024 + (Extra.String.to_hex.era(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, hx2) - 56320) : U32)}, Laws.decode.era(t)} : String}
+                                          %F.TH4(a2, b2, c2, d2, hx2) : {Laws.decode.era(e ++ "u" ++ SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} ++ e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}} ++ t) == SCon{Chr{(65536 + (hexv(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, 0) - 55296) * 1024 + (_ - 56320) : U32)}, Laws.decode.era(t)} : String}
+                                          decp2(GRAMMAR, {==}, e, SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t, a1, b1, c1, d1, {==}, a2, b2, c2, d2, {==}, hyp("escape", e, he), F.toIS(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, hx1), F.toIS(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, hx2), F.cvB(a1, b1, c1, d1, hx1, v => Bool.and(U32.is_ge(v, 55296), U32.is_le(v, 56319)), hs1), F.cvB(a2, b2, c2, d2, hx2, v => Bool.and(U32.is_ge(v, 56320), U32.is_le(v, 57343)), hs2))
                                         case SCon{f2, r52}:
                                           len4ne({Laws.decode.era(e ++ "u" ++ SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} ++ e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SCon{f2, r52}}}}} ++ t) == SCon{Chr{(65536 + (Extra.String.to_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, hx1) - 55296) * 1024 + (Extra.String.to_hex.era(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SCon{f2, r52}}}}}, hx2) - 56320) : U32)}, Laws.decode.era(t)} : String}, String.length(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SCon{f2, r52}}}}}), lx2, {==})
                     case SCon{f1, r51}:
@@ -6509,11 +7851,1294 @@ def Laws.decode.high_u(e, x1, x2, t, he, hx1, lx1, hx2, lx2, hs1, hs2):
                                     case SCon{d2, r42}:
                                       match r42:
                                         case SNil{}:
-                                          dechu2(GRAMMAR, {==}, e, SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t, a1, b1, c1, d1, {==}, a2, b2, c2, d2, {==}, hyp("escape", e, he), hx1, hx2, hs1, hs2)
+                                          +a1 = a1
+                                          +b1 = b1
+                                          +c1 = c1
+                                          +d1 = d1
+                                          +a2 = a2
+                                          +b2 = b2
+                                          +c2 = c2
+                                          +d2 = d2
+                                          +hx1 = hx1
+                                          +hx2 = hx2
+                                          %F.TH4(a1, b1, c1, d1, hx1) : {Laws.decode.era(e ++ "u" ++ SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} ++ e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}} ++ t) == SCon{Chr{_}, Laws.decode.era(e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}} ++ t)} : String}
+                                          dechu2(GRAMMAR, {==}, e, SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, t, a1, b1, c1, d1, {==}, a2, b2, c2, d2, {==}, hyp("escape", e, he), F.toIS(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, hx1), F.toIS(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SNil{}}}}}, hx2), F.cvB(a1, b1, c1, d1, hx1, v => Bool.and(U32.is_ge(v, 55296), U32.is_le(v, 56319)), hs1), F.cvB(a2, b2, c2, d2, hx2, v => Bool.or(U32.is_lt(v, 56320), U32.is_gt(v, 57343)), hs2))
                                         case SCon{f2, r52}:
                                           len4ne({Laws.decode.era(e ++ "u" ++ SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}} ++ e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SCon{f2, r52}}}}} ++ t) == SCon{Chr{Extra.String.to_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SNil{}}}}}, hx1)}, Laws.decode.era(e ++ "u" ++ SCon{a2, SCon{b2, SCon{c2, SCon{d2, SCon{f2, r52}}}}} ++ t)} : String}, String.length(SCon{a2, SCon{b2, SCon{c2, SCon{d2, SCon{f2, r52}}}}}), lx2, {==})
                     case SCon{f1, r51}:
                       len4ne({Laws.decode.era(e ++ "u" ++ SCon{a1, SCon{b1, SCon{c1, SCon{d1, SCon{f1, r51}}}}} ++ e ++ "u" ++ x2 ++ t) == SCon{Chr{Extra.String.to_hex.era(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SCon{f1, r51}}}}}, hx1)}, Laws.decode.era(e ++ "u" ++ x2 ++ t)} : String}, String.length(SCon{a1, SCon{b1, SCon{c1, SCon{d1, SCon{f1, r51}}}}}), lx1, {==})
+
+# The code point and the pending surrogate, without pre/np's closures.
+def F.dputN(hb: Bool, +v: U32, acc: String, d: F.K) -> F.S:
+  match hb:
+    case True{}:
+      ZQ{acc, v, d}
+    case False{}:
+      ZS{SCon{Chr{v}, acc}, d}
+
+def F.dputS(lb: Bool, hb: Bool, +h: U32, +v: U32, acc: String, d: F.K) -> F.S:
+  match lb:
+    case True{}:
+      ZS{SCon{Chr{pair(h, v)}, acc}, d}
+    case False{}:
+      match hb:
+        case True{}:
+          ZQ{SCon{Chr{h}, acc}, v, d}
+        case False{}:
+          ZS{SCon{Chr{v}, SCon{Chr{h}, acc}}, d}
+
+def F.dputF(+v: U32, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match p:
+    case None{}:
+      F.dputN(hi(v), v, acc, d)
+    case Some{+h}:
+      F.dputS(lo(v), hi(v), h, v, acc, d)
+
+def F.dputNEq(hb: Bool, +v: U32, -acc: String, -d: F.K) -> {F.dputN(hb, v, acc, d) == F.dput(sel(String, hb, u => SNil{}, u => SCon{Chr{v}, SNil{}}), sel(Maybe<&2, U32>, hb, u => Some{v}, u => None{}), acc, d) : F.S}:
+  match hb:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.dputSEq(lb: Bool, hb: Bool, +h: U32, +v: U32, -acc: String, -d: F.K) -> {F.dputS(lb, hb, h, v, acc, d) == F.dput(sel(String, lb, u => SCon{Chr{pair(h, v)}, SNil{}}, u => SCon{Chr{h}, sel(String, hb, u => SNil{}, u => SCon{Chr{v}, SNil{}})}), sel(Maybe<&2, U32>, lb, u => None{}, u => sel(Maybe<&2, U32>, hb, u => Some{v}, u => None{})), acc, d) : F.S}:
+  match lb:
+    case True{}:
+      {==}
+    case False{}:
+      match hb:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+
+def F.dputFEq(+v: U32, p: Maybe<&2, U32>, -acc: String, -d: F.K) -> {F.dputF(v, p, acc, d) == F.dputV(v, p, acc, d) : F.S}:
+  match p:
+    case None{}:
+      F.dputNEq(hi(v), v, acc, d)
+    case Some{+h}:
+      F.dputSEq(lo(v), hi(v), h, v, acc, d)
+
+def F.ufin(b: Bool, +x1: Char, +x2: Char, +x3: Char, +c: Char, +p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match b:
+    case True{}:
+      F.dputF(F.hex4(x1, x2, x3, c), p, acc, d)
+    case False{}:
+      ZS{F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), d}
+
+def F.uwait(p: Maybe<&2, U32>, ds: String, acc: String, d: F.K) -> F.S:
+  match p:
+    case None{}:
+      ZU{acc, ds, d}
+    case Some{h}:
+      ZQU{acc, h, ds, d}
+
+def F.udig(ds: String, +c: Char, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match ds:
+    case SNil{}:
+      F.uwait(p, SCon{c, SNil{}}, acc, d)
+    case SCon{+x1, r}:
+      match r:
+        case SNil{}:
+          F.uwait(p, SCon{x1, SCon{c, SNil{}}}, acc, d)
+        case SCon{+x2, r2}:
+          match r2:
+            case SNil{}:
+              F.uwait(p, SCon{x1, SCon{x2, SCon{c, SNil{}}}}, acc, d)
+            case SCon{+x3, r3}:
+              match r3:
+                case SNil{}:
+                  F.ufin(True{}, x1, x2, x3, c, p, acc, d)
+                case SCon{x4, r4}:
+                  ZX{}
+
+def F.uhex(b: Bool, ds: String, +c: Char, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match b:
+    case True{}:
+      F.udig(ds, c, p, acc, d)
+    case False{}:
+      ZX{}
+
+def F.sesc2(b: Bool, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match b:
+    case True{}:
+      F.uwait(p, SNil{}, acc, d)
+    case False{}:
+      ZX{}
+
+def F.sesc1(b: Bool, +c: Char, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZS{SCon{esc(c), F.emitA(p, acc)}, d}
+    case False{}:
+      F.sesc2(Char.is_eq(c, 'u'), p, acc, d)
+
+# After a backslash, with the pending surrogate p.
+def F.sesc(+c: Char, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  F.sesc1(issimple(c), c, p, acc, d)
+
+def F.lstep2(b: Bool, rs: String, v: V, k: F.K) -> F.S:
+  match b:
+    case False{}:
+      ZX{}
+    case True{}:
+      match rs:
+        case SNil{}:
+          F.complete(v, k)
+        case rs:
+          ZL{rs, v, k}
+
+def F.lstep(rest: String, v: V, k: F.K, +c: Char) -> F.S:
+  match rest:
+    case SNil{}:
+      ZX{}
+    case SCon{+r, rs}:
+      F.lstep2(Char.is_eq(c, r), rs, v, k)
+
+def F.vnum2(q: F.NQ, +c: Char, k: F.K) -> F.S:
+  match q:
+    case QX{}:
+      ZX{}
+    case q:
+      ZN{SCon{c, SNil{}}, q, k}
+
+def F.vs7(b: Bool, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZO0{k}
+    case False{}:
+      ZX{}
+
+def F.vs6(b: Bool, +c: Char, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZA0{k}
+    case False{}:
+      F.vs7(Char.is_eq('{', c), k)
+
+def F.vs5(b: Bool, +c: Char, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZS{SNil{}, k}
+    case False{}:
+      F.vs6(Char.is_eq('[', c), c, k)
+
+def F.vs4(b: Bool, +c: Char, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZL{"alse", VBool{False{}}, k}
+    case False{}:
+      F.vs5(Char.is_eq('"', c), c, k)
+
+def F.vs3(b: Bool, +c: Char, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZL{"rue", VBool{True{}}, k}
+    case False{}:
+      F.vs4(Char.is_eq('f', c), c, k)
+
+def F.vs2(b: Bool, +c: Char, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      ZL{"ull", VNull{}, k}
+    case False{}:
+      F.vs3(Char.is_eq('t', c), c, k)
+
+def F.vs1(b: Bool, +c: Char, k: F.K) -> F.S:
+  match b:
+    case True{}:
+      F.vnum2(F.ndc(QS{}, F.ncls(c)), c, k)
+    case False{}:
+      F.vs2(Char.is_eq('n', c), c, k)
+
+# The first character of a value, tested as pv tests it.
+def F.vstart(+c: Char, k: F.K) -> F.S:
+  F.vs1(isnum0(c), c, k)
+
+# The step
+# ========
+
+# step(q): the state after reading q's character in q's state.
+def F.step(q: F.SC) -> F.S:
+  match q:
+    case ZC{st, cc, +c}:
+      match st:
+        case ZS{acc, d}:
+          match cc:
+            case CQ{}:
+              F.sdone(acc, d)
+            case CB{}:
+              ZE{acc, d}
+            case CX{}:
+              ZS{SCon{c, acc}, d}
+            case _:
+              ZX{}
+        case ZE{acc, d}:
+          F.sesc(c, None{}, acc, d)
+        case ZU{acc, ds, d}:
+          F.uhex(ishex(c), ds, c, None{}, acc, d)
+        case ZQ{acc, hi, d}:
+          match cc:
+            case CB{}:
+              ZQE{acc, hi, d}
+            case CQ{}:
+              F.sdone(SCon{Chr{hi}, acc}, d)
+            case CX{}:
+              ZS{SCon{c, SCon{Chr{hi}, acc}}, d}
+            case _:
+              ZX{}
+        case ZQE{acc, hi, d}:
+          F.sesc(c, Some{hi}, acc, d)
+        case ZQU{acc, hi, ds, d}:
+          F.uhex(ishex(c), ds, c, Some{hi}, acc, d)
+        case ZN{acc, q, k}:
+          match q:
+            case QM{}:
+              match cc:
+                case CZ{}:
+                  ZN{SCon{c, acc}, QZ{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QI{}, k}
+                case _:
+                  ZX{}
+            case QZ{}:
+              match cc:
+                case CDot{}:
+                  ZN{SCon{c, acc}, QF0{}, k}
+                case CE{}:
+                  ZN{SCon{c, acc}, QE0{}, k}
+                case _:
+                  F.nfin(acc, k, c)
+            case QI{}:
+              match cc:
+                case CZ{}:
+                  ZN{SCon{c, acc}, QI{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QI{}, k}
+                case CDot{}:
+                  ZN{SCon{c, acc}, QF0{}, k}
+                case CE{}:
+                  ZN{SCon{c, acc}, QE0{}, k}
+                case _:
+                  F.nfin(acc, k, c)
+            case QF0{}:
+              match cc:
+                case CZ{}:
+                  ZN{SCon{c, acc}, QF{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QF{}, k}
+                case _:
+                  ZX{}
+            case QF{}:
+              match cc:
+                case CZ{}:
+                  ZN{SCon{c, acc}, QF{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QF{}, k}
+                case CE{}:
+                  ZN{SCon{c, acc}, QE0{}, k}
+                case _:
+                  F.nfin(acc, k, c)
+            case QE0{}:
+              match cc:
+                case CP{}:
+                  ZN{SCon{c, acc}, QES{}, k}
+                case CM{}:
+                  ZN{SCon{c, acc}, QES{}, k}
+                case CZ{}:
+                  ZN{SCon{c, acc}, QE{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QE{}, k}
+                case _:
+                  ZX{}
+            case QES{}:
+              match cc:
+                case CZ{}:
+                  ZN{SCon{c, acc}, QE{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QE{}, k}
+                case _:
+                  ZX{}
+            case QE{}:
+              match cc:
+                case CZ{}:
+                  ZN{SCon{c, acc}, QE{}, k}
+                case CD{}:
+                  ZN{SCon{c, acc}, QE{}, k}
+                case _:
+                  F.nfin(acc, k, c)
+            case _:
+              ZX{}
+        case ZL{rest, v, k}:
+          F.lstep(rest, v, k, c)
+        case ZV{k}:
+          match cc:
+            case CW{}:
+              ZV{k}
+            case _:
+              F.vstart(c, k)
+        case ZA0{k}:
+          match cc:
+            case CW{}:
+              ZA0{k}
+            case CRA{}:
+              F.complete(VArr{[]}, k)
+            case _:
+              F.vstart(c, KA{[], k})
+        case ZAN{xs, k}:
+          match cc:
+            case CW{}:
+              ZAN{xs, k}
+            case CComma{}:
+              ZV{KA{xs, k}}
+            case CRA{}:
+              F.complete(VArr{F.revl(V, xs, [])}, k)
+            case _:
+              ZX{}
+        case ZO0{k}:
+          match cc:
+            case CW{}:
+              ZO0{k}
+            case CRO{}:
+              F.complete(VObj{[]}, k)
+            case CQ{}:
+              ZS{SNil{}, KKey{[], k}}
+            case _:
+              ZX{}
+        case ZOK{ms, k}:
+          match cc:
+            case CW{}:
+              ZOK{ms, k}
+            case CQ{}:
+              ZS{SNil{}, KKey{ms, k}}
+            case _:
+              ZX{}
+        case ZON{ms, k}:
+          match cc:
+            case CW{}:
+              ZON{ms, k}
+            case CComma{}:
+              ZOK{ms, k}
+            case CRO{}:
+              F.complete(VObj{F.revl((TxtT & V), ms, [])}, k)
+            case _:
+              ZX{}
+        case ZCo{key, ms, k}:
+          match cc:
+            case CW{}:
+              ZCo{key, ms, k}
+            case CColon{}:
+              ZV{KO{key, ms, k}}
+            case _:
+              ZX{}
+        case ZD{v}:
+          match cc:
+            case CW{}:
+              ZD{v}
+            case _:
+              ZX{}
+        case ZX{}:
+          ZX{}
+
+def F.go(s: String, q: F.SC) -> F.S:
+  match s:
+    case SNil{}:
+      F.step(q)
+    case SCon{+c2, t}:
+      match q:
+        case ZC{st, cc, +c}:
+          match st:
+            case ZS{acc, d}:
+              match cc:
+                case CQ{}:
+                  F.go(t, F.ccls(F.sdone(acc, d), c2))
+                case CB{}:
+                  F.go(t, ZC{ZE{acc, d}, CX{}, c2})
+                case CX{}:
+                  F.go(t, ZC{ZS{SCon{c, acc}, d}, F.scls(c2), c2})
+                case _:
+                  ZX{}
+            case ZE{acc, d}:
+              F.go(t, F.ccls(F.sesc(c, None{}, acc, d), c2))
+            case ZU{acc, ds, d}:
+              F.go(t, F.ccls(F.uhex(ishex(c), ds, c, None{}, acc, d), c2))
+            case ZQ{acc, hi, d}:
+              match cc:
+                case CB{}:
+                  F.go(t, ZC{ZQE{acc, hi, d}, CX{}, c2})
+                case CQ{}:
+                  F.go(t, F.ccls(F.sdone(SCon{Chr{hi}, acc}, d), c2))
+                case CX{}:
+                  F.go(t, ZC{ZS{SCon{c, SCon{Chr{hi}, acc}}, d}, F.scls(c2), c2})
+                case _:
+                  ZX{}
+            case ZQE{acc, hi, d}:
+              F.go(t, F.ccls(F.sesc(c, Some{hi}, acc, d), c2))
+            case ZQU{acc, hi, ds, d}:
+              F.go(t, F.ccls(F.uhex(ishex(c), ds, c, Some{hi}, acc, d), c2))
+            case ZN{acc, q, k}:
+              match q:
+                case QM{}:
+                  match cc:
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QZ{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QI{}, k}, F.ncls(c2), c2})
+                    case _:
+                      ZX{}
+                case QZ{}:
+                  match cc:
+                    case CDot{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QF0{}, k}, F.ncls(c2), c2})
+                    case CE{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE0{}, k}, F.ncls(c2), c2})
+                    case _:
+                      F.go(t, F.ccls(F.nfin(acc, k, c), c2))
+                case QI{}:
+                  match cc:
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QI{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QI{}, k}, F.ncls(c2), c2})
+                    case CDot{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QF0{}, k}, F.ncls(c2), c2})
+                    case CE{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE0{}, k}, F.ncls(c2), c2})
+                    case _:
+                      F.go(t, F.ccls(F.nfin(acc, k, c), c2))
+                case QF0{}:
+                  match cc:
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QF{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QF{}, k}, F.ncls(c2), c2})
+                    case _:
+                      ZX{}
+                case QF{}:
+                  match cc:
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QF{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QF{}, k}, F.ncls(c2), c2})
+                    case CE{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE0{}, k}, F.ncls(c2), c2})
+                    case _:
+                      F.go(t, F.ccls(F.nfin(acc, k, c), c2))
+                case QE0{}:
+                  match cc:
+                    case CP{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QES{}, k}, F.ncls(c2), c2})
+                    case CM{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QES{}, k}, F.ncls(c2), c2})
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE{}, k}, F.ncls(c2), c2})
+                    case _:
+                      ZX{}
+                case QES{}:
+                  match cc:
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE{}, k}, F.ncls(c2), c2})
+                    case _:
+                      ZX{}
+                case QE{}:
+                  match cc:
+                    case CZ{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE{}, k}, F.ncls(c2), c2})
+                    case CD{}:
+                      F.go(t, ZC{ZN{SCon{c, acc}, QE{}, k}, F.ncls(c2), c2})
+                    case _:
+                      F.go(t, F.ccls(F.nfin(acc, k, c), c2))
+                case _:
+                  ZX{}
+            case ZL{rest, v, k}:
+              F.go(t, F.ccls(F.lstep(rest, v, k, c), c2))
+            case ZV{k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZV{k}, F.gcls(c2), c2})
+                case _:
+                  F.go(t, F.ccls(F.vstart(c, k), c2))
+            case ZA0{k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZA0{k}, F.gcls(c2), c2})
+                case CRA{}:
+                  F.go(t, F.ccls(F.complete(VArr{[]}, k), c2))
+                case _:
+                  F.go(t, F.ccls(F.vstart(c, KA{[], k}), c2))
+            case ZAN{xs, k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZAN{xs, k}, F.gcls(c2), c2})
+                case CComma{}:
+                  F.go(t, ZC{ZV{KA{xs, k}}, F.gcls(c2), c2})
+                case CRA{}:
+                  F.go(t, F.ccls(F.complete(VArr{F.revl(V, xs, [])}, k), c2))
+                case _:
+                  ZX{}
+            case ZO0{k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZO0{k}, F.gcls(c2), c2})
+                case CRO{}:
+                  F.go(t, F.ccls(F.complete(VObj{[]}, k), c2))
+                case CQ{}:
+                  F.go(t, ZC{ZS{SNil{}, KKey{[], k}}, F.scls(c2), c2})
+                case _:
+                  ZX{}
+            case ZOK{ms, k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZOK{ms, k}, F.gcls(c2), c2})
+                case CQ{}:
+                  F.go(t, ZC{ZS{SNil{}, KKey{ms, k}}, F.scls(c2), c2})
+                case _:
+                  ZX{}
+            case ZON{ms, k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZON{ms, k}, F.gcls(c2), c2})
+                case CComma{}:
+                  F.go(t, ZC{ZOK{ms, k}, F.gcls(c2), c2})
+                case CRO{}:
+                  F.go(t, F.ccls(F.complete(VObj{F.revl((TxtT & V), ms, [])}, k), c2))
+                case _:
+                  ZX{}
+            case ZCo{key, ms, k}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZCo{key, ms, k}, F.gcls(c2), c2})
+                case CColon{}:
+                  F.go(t, ZC{ZV{KO{key, ms, k}}, F.gcls(c2), c2})
+                case _:
+                  ZX{}
+            case ZD{v}:
+              match cc:
+                case CW{}:
+                  F.go(t, ZC{ZD{v}, F.gcls(c2), c2})
+                case _:
+                  ZX{}
+            case ZX{}:
+              ZX{}
+
+# Loading
+# =======
+
+def F.finK(v: V, k: F.K) -> Maybe<V>:
+  match k:
+    case KTop{}:
+      Some{v}
+    case _:
+      None{}
+
+def F.finM(m: Maybe<V>, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{v}:
+      F.finK(v, k)
+
+def F.finN(b: Bool, acc: String, k: F.K) -> Maybe<V>:
+  match b:
+    case True{}:
+      F.finM(F.numOf(acc), k)
+    case False{}:
+      None{}
+
+# The value read, once the text is over.
+def F.fin(st: F.S) -> Maybe<V>:
+  match st:
+    case ZD{v}:
+      Some{v}
+    case ZN{acc, +q, k}:
+      F.finN(F.nend(q), acc, k)
+    case _:
+      None{}
+
+def F.load(s: String) -> Maybe<V>:
+  match s:
+    case SNil{}:
+      None{}
+    case SCon{+c, t}:
+      F.fin(F.go(t, ZC{ZV{KTop{}}, F.gcls(c), c}))
+
+# go is the fold of step
+# ======================
+
+def F.run(s: String, st: F.S) -> F.S:
+  match s:
+    case SNil{}:
+      st
+    case SCon{+c, t}:
+      F.run(t, F.step(F.ccls(st, c)))
+
+def F.runX(s: String) -> {F.run(s, ZX{}) == ZX{} : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, t}:
+      F.runX(t)
+
+def F.goRun.ZS(+c: Char, acc: String, d: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZS{acc, d}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZS{acc, d}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      ih(F.sdone(acc, d))
+    case CB{}:
+      ih(ZE{acc, d})
+    case CW{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CComma{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      ih(ZS{SCon{c, acc}, d})
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZE(+c: Char, acc: String, d: F.K, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZE{acc, d}, CX{}, c}) == F.run(SCon{c, SCon{c2, t2}}, ZE{acc, d}) : F.S}:
+  ih(F.sesc(c, None{}, acc, d))
+
+def F.goRun.ZU(+c: Char, acc: String, ds: String, d: F.K, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZU{acc, ds, d}, CX{}, c}) == F.run(SCon{c, SCon{c2, t2}}, ZU{acc, ds, d}) : F.S}:
+  ih(F.uhex(ishex(c), ds, c, None{}, acc, d))
+
+def F.goRun.ZQ(+c: Char, acc: String, hi: U32, d: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZQ{acc, hi, d}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZQ{acc, hi, d}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      ih(F.sdone(SCon{Chr{hi}, acc}, d))
+    case CB{}:
+      ih(ZQE{acc, hi, d})
+    case CW{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CComma{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      ih(ZS{SCon{c, SCon{Chr{hi}, acc}}, d})
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZQE(+c: Char, acc: String, hi: U32, d: F.K, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZQE{acc, hi, d}, CX{}, c}) == F.run(SCon{c, SCon{c2, t2}}, ZQE{acc, hi, d}) : F.S}:
+  ih(F.sesc(c, Some{hi}, acc, d))
+
+def F.goRun.ZQU(+c: Char, acc: String, hi: U32, ds: String, d: F.K, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZQU{acc, hi, ds, d}, CX{}, c}) == F.run(SCon{c, SCon{c2, t2}}, ZQU{acc, hi, ds, d}) : F.S}:
+  ih(F.uhex(ishex(c), ds, c, Some{hi}, acc, d))
+
+def F.goRun.ZN(+c: Char, acc: String, q: F.NQ, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZN{acc, q, k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZN{acc, q, k}, cc, c})) : F.S}:
+  match q:
+    case QS{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case QM{}:
+      match cc:
+        case CQ{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CB{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CW{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CComma{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CColon{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRA{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRO{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QZ{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QI{}, k})
+        case CDot{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CE{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CP{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CM{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CX{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CBad{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case QZ{}:
+      match cc:
+        case CQ{}:
+          ih(F.nfin(acc, k, c))
+        case CB{}:
+          ih(F.nfin(acc, k, c))
+        case CW{}:
+          ih(F.nfin(acc, k, c))
+        case CComma{}:
+          ih(F.nfin(acc, k, c))
+        case CColon{}:
+          ih(F.nfin(acc, k, c))
+        case CRA{}:
+          ih(F.nfin(acc, k, c))
+        case CRO{}:
+          ih(F.nfin(acc, k, c))
+        case CZ{}:
+          ih(F.nfin(acc, k, c))
+        case CD{}:
+          ih(F.nfin(acc, k, c))
+        case CDot{}:
+          ih(ZN{SCon{c, acc}, QF0{}, k})
+        case CE{}:
+          ih(ZN{SCon{c, acc}, QE0{}, k})
+        case CP{}:
+          ih(F.nfin(acc, k, c))
+        case CM{}:
+          ih(F.nfin(acc, k, c))
+        case CX{}:
+          ih(F.nfin(acc, k, c))
+        case CBad{}:
+          ih(F.nfin(acc, k, c))
+    case QI{}:
+      match cc:
+        case CQ{}:
+          ih(F.nfin(acc, k, c))
+        case CB{}:
+          ih(F.nfin(acc, k, c))
+        case CW{}:
+          ih(F.nfin(acc, k, c))
+        case CComma{}:
+          ih(F.nfin(acc, k, c))
+        case CColon{}:
+          ih(F.nfin(acc, k, c))
+        case CRA{}:
+          ih(F.nfin(acc, k, c))
+        case CRO{}:
+          ih(F.nfin(acc, k, c))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QI{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QI{}, k})
+        case CDot{}:
+          ih(ZN{SCon{c, acc}, QF0{}, k})
+        case CE{}:
+          ih(ZN{SCon{c, acc}, QE0{}, k})
+        case CP{}:
+          ih(F.nfin(acc, k, c))
+        case CM{}:
+          ih(F.nfin(acc, k, c))
+        case CX{}:
+          ih(F.nfin(acc, k, c))
+        case CBad{}:
+          ih(F.nfin(acc, k, c))
+    case QF0{}:
+      match cc:
+        case CQ{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CB{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CW{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CComma{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CColon{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRA{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRO{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QF{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QF{}, k})
+        case CDot{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CE{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CP{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CM{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CX{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CBad{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case QF{}:
+      match cc:
+        case CQ{}:
+          ih(F.nfin(acc, k, c))
+        case CB{}:
+          ih(F.nfin(acc, k, c))
+        case CW{}:
+          ih(F.nfin(acc, k, c))
+        case CComma{}:
+          ih(F.nfin(acc, k, c))
+        case CColon{}:
+          ih(F.nfin(acc, k, c))
+        case CRA{}:
+          ih(F.nfin(acc, k, c))
+        case CRO{}:
+          ih(F.nfin(acc, k, c))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QF{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QF{}, k})
+        case CDot{}:
+          ih(F.nfin(acc, k, c))
+        case CE{}:
+          ih(ZN{SCon{c, acc}, QE0{}, k})
+        case CP{}:
+          ih(F.nfin(acc, k, c))
+        case CM{}:
+          ih(F.nfin(acc, k, c))
+        case CX{}:
+          ih(F.nfin(acc, k, c))
+        case CBad{}:
+          ih(F.nfin(acc, k, c))
+    case QE0{}:
+      match cc:
+        case CQ{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CB{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CW{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CComma{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CColon{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRA{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRO{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QE{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QE{}, k})
+        case CDot{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CE{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CP{}:
+          ih(ZN{SCon{c, acc}, QES{}, k})
+        case CM{}:
+          ih(ZN{SCon{c, acc}, QES{}, k})
+        case CX{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CBad{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case QES{}:
+      match cc:
+        case CQ{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CB{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CW{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CComma{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CColon{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRA{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CRO{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QE{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QE{}, k})
+        case CDot{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CE{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CP{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CM{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CX{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+        case CBad{}:
+          Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case QE{}:
+      match cc:
+        case CQ{}:
+          ih(F.nfin(acc, k, c))
+        case CB{}:
+          ih(F.nfin(acc, k, c))
+        case CW{}:
+          ih(F.nfin(acc, k, c))
+        case CComma{}:
+          ih(F.nfin(acc, k, c))
+        case CColon{}:
+          ih(F.nfin(acc, k, c))
+        case CRA{}:
+          ih(F.nfin(acc, k, c))
+        case CRO{}:
+          ih(F.nfin(acc, k, c))
+        case CZ{}:
+          ih(ZN{SCon{c, acc}, QE{}, k})
+        case CD{}:
+          ih(ZN{SCon{c, acc}, QE{}, k})
+        case CDot{}:
+          ih(F.nfin(acc, k, c))
+        case CE{}:
+          ih(F.nfin(acc, k, c))
+        case CP{}:
+          ih(F.nfin(acc, k, c))
+        case CM{}:
+          ih(F.nfin(acc, k, c))
+        case CX{}:
+          ih(F.nfin(acc, k, c))
+        case CBad{}:
+          ih(F.nfin(acc, k, c))
+    case QX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZL(+c: Char, rest: String, v: V, k: F.K, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZL{rest, v, k}, CX{}, c}) == F.run(SCon{c, SCon{c2, t2}}, ZL{rest, v, k}) : F.S}:
+  ih(F.lstep(rest, v, k, c))
+
+def F.goRun.ZV(+c: Char, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZV{k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZV{k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      ih(F.vstart(c, k))
+    case CB{}:
+      ih(F.vstart(c, k))
+    case CW{}:
+      ih(ZV{k})
+    case CComma{}:
+      ih(F.vstart(c, k))
+    case CColon{}:
+      ih(F.vstart(c, k))
+    case CRA{}:
+      ih(F.vstart(c, k))
+    case CRO{}:
+      ih(F.vstart(c, k))
+    case CZ{}:
+      ih(F.vstart(c, k))
+    case CD{}:
+      ih(F.vstart(c, k))
+    case CDot{}:
+      ih(F.vstart(c, k))
+    case CE{}:
+      ih(F.vstart(c, k))
+    case CP{}:
+      ih(F.vstart(c, k))
+    case CM{}:
+      ih(F.vstart(c, k))
+    case CX{}:
+      ih(F.vstart(c, k))
+    case CBad{}:
+      ih(F.vstart(c, k))
+
+def F.goRun.ZA0(+c: Char, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZA0{k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZA0{k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CB{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CW{}:
+      ih(ZA0{k})
+    case CComma{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CColon{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CRA{}:
+      ih(F.complete(VArr{[]}, k))
+    case CRO{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CZ{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CD{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CDot{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CE{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CP{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CM{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CX{}:
+      ih(F.vstart(c, KA{[], k}))
+    case CBad{}:
+      ih(F.vstart(c, KA{[], k}))
+
+def F.goRun.ZAN(+c: Char, xs: List<V>, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZAN{xs, k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZAN{xs, k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CB{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CW{}:
+      ih(ZAN{xs, k})
+    case CComma{}:
+      ih(ZV{KA{xs, k}})
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      ih(F.complete(VArr{F.revl(V, xs, [])}, k))
+    case CRO{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZO0(+c: Char, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZO0{k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZO0{k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      ih(ZS{SNil{}, KKey{[], k}})
+    case CB{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CW{}:
+      ih(ZO0{k})
+    case CComma{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      ih(F.complete(VObj{[]}, k))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZOK(+c: Char, ms: List<(TxtT & V)>, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZOK{ms, k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZOK{ms, k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      ih(ZS{SNil{}, KKey{ms, k}})
+    case CB{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CW{}:
+      ih(ZOK{ms, k})
+    case CComma{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZON(+c: Char, ms: List<(TxtT & V)>, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZON{ms, k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZON{ms, k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CB{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CW{}:
+      ih(ZON{ms, k})
+    case CComma{}:
+      ih(ZOK{ms, k})
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      ih(F.complete(VObj{F.revl((TxtT & V), ms, [])}, k))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZCo(+c: Char, key: TxtT, ms: List<(TxtT & V)>, k: F.K, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZCo{key, ms, k}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZCo{key, ms, k}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CB{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CW{}:
+      ih(ZCo{key, ms, k})
+    case CComma{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CColon{}:
+      ih(ZV{KO{key, ms, k}})
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZD(+c: Char, v: V, cc: F.CC, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZD{v}, cc, c}) == F.run(SCon{c2, t2}, F.step(ZC{ZD{v}, cc, c})) : F.S}:
+  match cc:
+    case CQ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CB{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CW{}:
+      ih(ZD{v})
+    case CComma{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CColon{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRA{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CRO{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CZ{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CD{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CDot{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CE{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CP{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CM{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CX{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+    case CBad{}:
+      Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.ZX(+c: Char, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, ZC{ZX{}, CX{}, c}) == F.run(SCon{c, SCon{c2, t2}}, ZX{}) : F.S}:
+  Equal.sym(F.S, F.run(SCon{c2, t2}, ZX{}), ZX{}, F.runX(SCon{c2, t2}))
+
+def F.goRun.s(st: F.S, +c: Char, +c2: Char, +t2: String, ih: @s:F.S -> {F.go(t2, F.ccls(s, c2)) == F.run(SCon{c2, t2}, s) : F.S}) -> {F.go(SCon{c2, t2}, F.ccls(st, c)) == F.run(SCon{c, SCon{c2, t2}}, st) : F.S}:
+  match st:
+    case ZS{acc, d}:
+      F.goRun.ZS(c, acc, d, F.scls(c), c2, t2, ih)
+    case ZE{acc, d}:
+      F.goRun.ZE(c, acc, d, c2, t2, ih)
+    case ZU{acc, ds, d}:
+      F.goRun.ZU(c, acc, ds, d, c2, t2, ih)
+    case ZQ{acc, hi, d}:
+      F.goRun.ZQ(c, acc, hi, d, F.scls(c), c2, t2, ih)
+    case ZQE{acc, hi, d}:
+      F.goRun.ZQE(c, acc, hi, d, c2, t2, ih)
+    case ZQU{acc, hi, ds, d}:
+      F.goRun.ZQU(c, acc, hi, ds, d, c2, t2, ih)
+    case ZN{acc, q, k}:
+      F.goRun.ZN(c, acc, q, k, F.ncls(c), c2, t2, ih)
+    case ZL{rest, v, k}:
+      F.goRun.ZL(c, rest, v, k, c2, t2, ih)
+    case ZV{k}:
+      F.goRun.ZV(c, k, F.gcls(c), c2, t2, ih)
+    case ZA0{k}:
+      F.goRun.ZA0(c, k, F.gcls(c), c2, t2, ih)
+    case ZAN{xs, k}:
+      F.goRun.ZAN(c, xs, k, F.gcls(c), c2, t2, ih)
+    case ZO0{k}:
+      F.goRun.ZO0(c, k, F.gcls(c), c2, t2, ih)
+    case ZOK{ms, k}:
+      F.goRun.ZOK(c, ms, k, F.gcls(c), c2, t2, ih)
+    case ZON{ms, k}:
+      F.goRun.ZON(c, ms, k, F.gcls(c), c2, t2, ih)
+    case ZCo{key, ms, k}:
+      F.goRun.ZCo(c, key, ms, k, F.gcls(c), c2, t2, ih)
+    case ZD{v}:
+      F.goRun.ZD(c, v, F.gcls(c), c2, t2, ih)
+    case ZX{}:
+      F.goRun.ZX(c, c2, t2, ih)
+
+# The loop is the fold.
+def F.goRun(t: String, st: F.S, +c: Char) -> {F.go(t, F.ccls(st, c)) == F.run(SCon{c, t}, st) : F.S}:
+  match t:
+    case SNil{}:
+      {==}
+    case SCon{+c2, +t2}:
+      F.goRun.s(st, c, c2, t2, s => F.goRun(t2, s, c2))
+
 
 # ================
 # Loading, as laws
@@ -6595,8 +9220,3101 @@ def lv(m: Maybe<Js>) -> Maybe<V>:
         case J{r, h}:
           rvM(r)
 
-def Laws.load.era(s):
+# The machine and the reference parser
+# =====================================
+#
+# F.obs(s, st): what the machine answers when it reads s in state st.
+
+def F.obs(s: String, st: F.S) -> Maybe<V>:
+  F.fin(F.run(s, st))
+
+def F.loadRun(s: String) -> {F.load(s) == F.obs(s, ZV{KTop{}}) : Maybe<V>}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      Equal.cong(F.S, Maybe<V>, x => F.fin(x), F.go(t, F.ccls(ZV{KTop{}}, c)), F.run(SCon{c, t}, ZV{KTop{}}), F.goRun(t, ZV{KTop{}}, c))
+
+def F.runX.obs(s: String) -> {F.obs(s, ZX{}) == None{} : Maybe<V>}:
+  Equal.cong(F.S, Maybe<V>, x => F.fin(x), F.run(s, ZX{}), ZX{}, F.runX(s))
+
+def F.gclsW(+c: Char, +h: {isws(c) == True{} : Bool}) -> {F.gcls(c) == CW{} : F.CC}:
+  %Equal.sym(Bool, isws(c), True{}, h) : {F.gc1(_, c) == CW{} : F.CC}
+  {==}
+
+def F.wsRun.f(+c: Char, -t: String, -st: F.S, +hw: {isws(c) == False{} : Bool}) -> {F.run(SCon{c, t}, st) == F.run(skip_ws(SCon{c, t}), st) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), SCon{c, t}, skipF(c, t, hw)) : {F.run(SCon{c, t}, st) == F.run(_, st) : F.S}
+  {==}
+
+def F.obsCong(-s1: String, -s2: String, -st1: F.S, -st2: F.S, e: {F.run(s1, st1) == F.run(s2, st2) : F.S}) -> {F.obs(s1, st1) == F.obs(s2, st2) : Maybe<V>}:
+  Equal.cong(F.S, Maybe<V>, x => F.fin(x), F.run(s1, st1), F.run(s2, st2), e)
+
+def F.wsRun.ZV.t(+c: Char, -t: String, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZV{k}) == F.run(skip_ws(t), ZV{k}) : F.S}) -> {F.run(SCon{c, t}, ZV{k}) == F.run(skip_ws(SCon{c, t}), ZV{k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZV{k}) == F.run(_, ZV{k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZV{k}, _, c})) == F.run(skip_ws(t), ZV{k}) : F.S}
+  ih
+
+def F.wsRun.ZV(s: String, -k: F.K) -> {F.run(s, ZV{k}) == F.run(skip_ws(s), ZV{k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZV{k}) == F.run(skip_ws(SCon{c, t}), ZV{k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZV.t(c, t, k, hw, F.wsRun.ZV(t, k)),
+        +hw => F.wsRun.f(c, t, ZV{k}, hw))
+
+def F.wsObs.ZV(s: String, -k: F.K) -> {F.obs(s, ZV{k}) == F.obs(skip_ws(s), ZV{k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZV{k}, ZV{k}, F.wsRun.ZV(s, k))
+
+def F.wsRun.ZA0.t(+c: Char, -t: String, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZA0{k}) == F.run(skip_ws(t), ZA0{k}) : F.S}) -> {F.run(SCon{c, t}, ZA0{k}) == F.run(skip_ws(SCon{c, t}), ZA0{k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZA0{k}) == F.run(_, ZA0{k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZA0{k}, _, c})) == F.run(skip_ws(t), ZA0{k}) : F.S}
+  ih
+
+def F.wsRun.ZA0(s: String, -k: F.K) -> {F.run(s, ZA0{k}) == F.run(skip_ws(s), ZA0{k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZA0{k}) == F.run(skip_ws(SCon{c, t}), ZA0{k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZA0.t(c, t, k, hw, F.wsRun.ZA0(t, k)),
+        +hw => F.wsRun.f(c, t, ZA0{k}, hw))
+
+def F.wsObs.ZA0(s: String, -k: F.K) -> {F.obs(s, ZA0{k}) == F.obs(skip_ws(s), ZA0{k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZA0{k}, ZA0{k}, F.wsRun.ZA0(s, k))
+
+def F.wsRun.ZAN.t(+c: Char, -t: String, -xs: List<V>, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZAN{xs, k}) == F.run(skip_ws(t), ZAN{xs, k}) : F.S}) -> {F.run(SCon{c, t}, ZAN{xs, k}) == F.run(skip_ws(SCon{c, t}), ZAN{xs, k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZAN{xs, k}) == F.run(_, ZAN{xs, k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZAN{xs, k}, _, c})) == F.run(skip_ws(t), ZAN{xs, k}) : F.S}
+  ih
+
+def F.wsRun.ZAN(s: String, -xs: List<V>, -k: F.K) -> {F.run(s, ZAN{xs, k}) == F.run(skip_ws(s), ZAN{xs, k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZAN{xs, k}) == F.run(skip_ws(SCon{c, t}), ZAN{xs, k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZAN.t(c, t, xs, k, hw, F.wsRun.ZAN(t, xs, k)),
+        +hw => F.wsRun.f(c, t, ZAN{xs, k}, hw))
+
+def F.wsObs.ZAN(s: String, -xs: List<V>, -k: F.K) -> {F.obs(s, ZAN{xs, k}) == F.obs(skip_ws(s), ZAN{xs, k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZAN{xs, k}, ZAN{xs, k}, F.wsRun.ZAN(s, xs, k))
+
+def F.wsRun.ZO0.t(+c: Char, -t: String, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZO0{k}) == F.run(skip_ws(t), ZO0{k}) : F.S}) -> {F.run(SCon{c, t}, ZO0{k}) == F.run(skip_ws(SCon{c, t}), ZO0{k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZO0{k}) == F.run(_, ZO0{k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZO0{k}, _, c})) == F.run(skip_ws(t), ZO0{k}) : F.S}
+  ih
+
+def F.wsRun.ZO0(s: String, -k: F.K) -> {F.run(s, ZO0{k}) == F.run(skip_ws(s), ZO0{k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZO0{k}) == F.run(skip_ws(SCon{c, t}), ZO0{k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZO0.t(c, t, k, hw, F.wsRun.ZO0(t, k)),
+        +hw => F.wsRun.f(c, t, ZO0{k}, hw))
+
+def F.wsObs.ZO0(s: String, -k: F.K) -> {F.obs(s, ZO0{k}) == F.obs(skip_ws(s), ZO0{k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZO0{k}, ZO0{k}, F.wsRun.ZO0(s, k))
+
+def F.wsRun.ZOK.t(+c: Char, -t: String, -ms: List<(TxtT & V)>, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZOK{ms, k}) == F.run(skip_ws(t), ZOK{ms, k}) : F.S}) -> {F.run(SCon{c, t}, ZOK{ms, k}) == F.run(skip_ws(SCon{c, t}), ZOK{ms, k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZOK{ms, k}) == F.run(_, ZOK{ms, k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZOK{ms, k}, _, c})) == F.run(skip_ws(t), ZOK{ms, k}) : F.S}
+  ih
+
+def F.wsRun.ZOK(s: String, -ms: List<(TxtT & V)>, -k: F.K) -> {F.run(s, ZOK{ms, k}) == F.run(skip_ws(s), ZOK{ms, k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZOK{ms, k}) == F.run(skip_ws(SCon{c, t}), ZOK{ms, k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZOK.t(c, t, ms, k, hw, F.wsRun.ZOK(t, ms, k)),
+        +hw => F.wsRun.f(c, t, ZOK{ms, k}, hw))
+
+def F.wsObs.ZOK(s: String, -ms: List<(TxtT & V)>, -k: F.K) -> {F.obs(s, ZOK{ms, k}) == F.obs(skip_ws(s), ZOK{ms, k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZOK{ms, k}, ZOK{ms, k}, F.wsRun.ZOK(s, ms, k))
+
+def F.wsRun.ZON.t(+c: Char, -t: String, -ms: List<(TxtT & V)>, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZON{ms, k}) == F.run(skip_ws(t), ZON{ms, k}) : F.S}) -> {F.run(SCon{c, t}, ZON{ms, k}) == F.run(skip_ws(SCon{c, t}), ZON{ms, k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZON{ms, k}) == F.run(_, ZON{ms, k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZON{ms, k}, _, c})) == F.run(skip_ws(t), ZON{ms, k}) : F.S}
+  ih
+
+def F.wsRun.ZON(s: String, -ms: List<(TxtT & V)>, -k: F.K) -> {F.run(s, ZON{ms, k}) == F.run(skip_ws(s), ZON{ms, k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZON{ms, k}) == F.run(skip_ws(SCon{c, t}), ZON{ms, k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZON.t(c, t, ms, k, hw, F.wsRun.ZON(t, ms, k)),
+        +hw => F.wsRun.f(c, t, ZON{ms, k}, hw))
+
+def F.wsObs.ZON(s: String, -ms: List<(TxtT & V)>, -k: F.K) -> {F.obs(s, ZON{ms, k}) == F.obs(skip_ws(s), ZON{ms, k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZON{ms, k}, ZON{ms, k}, F.wsRun.ZON(s, ms, k))
+
+def F.wsRun.ZCo.t(+c: Char, -t: String, -key: TxtT, -ms: List<(TxtT & V)>, -k: F.K, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZCo{key, ms, k}) == F.run(skip_ws(t), ZCo{key, ms, k}) : F.S}) -> {F.run(SCon{c, t}, ZCo{key, ms, k}) == F.run(skip_ws(SCon{c, t}), ZCo{key, ms, k}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZCo{key, ms, k}) == F.run(_, ZCo{key, ms, k}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZCo{key, ms, k}, _, c})) == F.run(skip_ws(t), ZCo{key, ms, k}) : F.S}
+  ih
+
+def F.wsRun.ZCo(s: String, -key: TxtT, -ms: List<(TxtT & V)>, -k: F.K) -> {F.run(s, ZCo{key, ms, k}) == F.run(skip_ws(s), ZCo{key, ms, k}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZCo{key, ms, k}) == F.run(skip_ws(SCon{c, t}), ZCo{key, ms, k}) : F.S}, isws(c),
+        +hw => F.wsRun.ZCo.t(c, t, key, ms, k, hw, F.wsRun.ZCo(t, key, ms, k)),
+        +hw => F.wsRun.f(c, t, ZCo{key, ms, k}, hw))
+
+def F.wsObs.ZCo(s: String, -key: TxtT, -ms: List<(TxtT & V)>, -k: F.K) -> {F.obs(s, ZCo{key, ms, k}) == F.obs(skip_ws(s), ZCo{key, ms, k}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZCo{key, ms, k}, ZCo{key, ms, k}, F.wsRun.ZCo(s, key, ms, k))
+
+def F.wsRun.ZD.t(+c: Char, -t: String, -v: V, +hw: {isws(c) == True{} : Bool}, +ih: {F.run(t, ZD{v}) == F.run(skip_ws(t), ZD{v}) : F.S}) -> {F.run(SCon{c, t}, ZD{v}) == F.run(skip_ws(SCon{c, t}), ZD{v}) : F.S}:
+  %Equal.sym(String, skip_ws(SCon{c, t}), skip_ws(t), selT(String, isws(c), u => skip_ws(t), u => SCon{c, t}, hw)) : {F.run(SCon{c, t}, ZD{v}) == F.run(_, ZD{v}) : F.S}
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.run(t, F.step(ZC{ZD{v}, _, c})) == F.run(skip_ws(t), ZD{v}) : F.S}
+  ih
+
+def F.wsRun.ZD(s: String, -v: V) -> {F.run(s, ZD{v}) == F.run(skip_ws(s), ZD{v}) : F.S}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      bcase({F.run(SCon{c, t}, ZD{v}) == F.run(skip_ws(SCon{c, t}), ZD{v}) : F.S}, isws(c),
+        +hw => F.wsRun.ZD.t(c, t, v, hw, F.wsRun.ZD(t, v)),
+        +hw => F.wsRun.f(c, t, ZD{v}, hw))
+
+def F.wsObs.ZD(s: String, -v: V) -> {F.obs(s, ZD{v}) == F.obs(skip_ws(s), ZD{v}) : Maybe<V>}:
+  F.obsCong(s, skip_ws(s), ZD{v}, ZD{v}, F.wsRun.ZD(s, v))
+
+# The classes between tokens, from the predicates that give them.
+def F.gcls.comma(+c: Char, +hw: {isws(c) == False{} : Bool}, +h: {Char.is_eq(',', c) == True{} : Bool}) -> {F.gcls(c) == CComma{} : F.CC}:
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.gc1(_, c) == CComma{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(',', c), True{}, h) : {F.gc2(_, c) == CComma{} : F.CC}
+  {==}
+
+def F.gcls.colon(+c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h: {Char.is_eq(':', c) == True{} : Bool}) -> {F.gcls(c) == CColon{} : F.CC}:
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.gc1(_, c) == CColon{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(',', c), False{}, h1) : {F.gc2(_, c) == CColon{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(':', c), True{}, h) : {F.gc3(_, c) == CColon{} : F.CC}
+  {==}
+
+def F.gcls.ra(+c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h: {Char.is_eq(']', c) == True{} : Bool}) -> {F.gcls(c) == CRA{} : F.CC}:
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.gc1(_, c) == CRA{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(',', c), False{}, h1) : {F.gc2(_, c) == CRA{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(':', c), False{}, h2) : {F.gc3(_, c) == CRA{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(']', c), True{}, h) : {F.gc4(_, c) == CRA{} : F.CC}
+  {==}
+
+def F.gcls.ro(+c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == False{} : Bool}, +h: {Char.is_eq('}', c) == True{} : Bool}) -> {F.gcls(c) == CRO{} : F.CC}:
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.gc1(_, c) == CRO{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(',', c), False{}, h1) : {F.gc2(_, c) == CRO{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(':', c), False{}, h2) : {F.gc3(_, c) == CRO{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(']', c), False{}, h3) : {F.gc4(_, c) == CRO{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('}', c), True{}, h) : {F.gc5(_, c) == CRO{} : F.CC}
+  {==}
+
+def F.gcls.q(+c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == False{} : Bool}, +h4: {Char.is_eq('}', c) == False{} : Bool}, +h: {Char.is_eq('"', c) == True{} : Bool}) -> {F.gcls(c) == CQ{} : F.CC}:
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.gc1(_, c) == CQ{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(',', c), False{}, h1) : {F.gc2(_, c) == CQ{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(':', c), False{}, h2) : {F.gc3(_, c) == CQ{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(']', c), False{}, h3) : {F.gc4(_, c) == CQ{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('}', c), False{}, h4) : {F.gc5(_, c) == CQ{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('"', c), True{}, h) : {F.gc6(_) == CQ{} : F.CC}
+  {==}
+
+def F.gcls.x(+c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == False{} : Bool}, +h4: {Char.is_eq('}', c) == False{} : Bool}, +h: {Char.is_eq('"', c) == False{} : Bool}) -> {F.gcls(c) == CX{} : F.CC}:
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.gc1(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(',', c), False{}, h1) : {F.gc2(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(':', c), False{}, h2) : {F.gc3(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq(']', c), False{}, h3) : {F.gc4(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('}', c), False{}, h4) : {F.gc5(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('"', c), False{}, h) : {F.gc6(_) == CX{} : F.CC}
+  {==}
+
+def F.gcase.c(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == True{} : Bool}, pc: {Char.is_eq(',', c) == True{} : Bool} -> P(CComma{})) -> P(F.gcls(c)):
+  %Equal.sym(F.CC, F.gcls(c), CComma{}, F.gcls.comma(c, hw, h1)) : P(_)
+  pc(h1)
+
+def F.gcase.k(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == True{} : Bool}, pk: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == True{} : Bool} -> P(CColon{})) -> P(F.gcls(c)):
+  %Equal.sym(F.CC, F.gcls(c), CColon{}, F.gcls.colon(c, hw, h1, h2)) : P(_)
+  pk(h1, h2)
+
+def F.gcase.a(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == True{} : Bool}, pa: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == True{} : Bool} -> P(CRA{})) -> P(F.gcls(c)):
+  %Equal.sym(F.CC, F.gcls(c), CRA{}, F.gcls.ra(c, hw, h1, h2, h3)) : P(_)
+  pa(h1, h2, h3)
+
+def F.gcase.o(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == False{} : Bool}, +h4: {Char.is_eq('}', c) == True{} : Bool}, po: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == False{} : Bool} -> {Char.is_eq('}', c) == True{} : Bool} -> P(CRO{})) -> P(F.gcls(c)):
+  %Equal.sym(F.CC, F.gcls(c), CRO{}, F.gcls.ro(c, hw, h1, h2, h3, h4)) : P(_)
+  po(h1, h2, h3, h4)
+
+def F.gcase.q(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == False{} : Bool}, +h4: {Char.is_eq('}', c) == False{} : Bool}, +h5: {Char.is_eq('"', c) == True{} : Bool}, pq: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == False{} : Bool} -> {Char.is_eq('}', c) == False{} : Bool} -> {Char.is_eq('"', c) == True{} : Bool} -> P(CQ{})) -> P(F.gcls(c)):
+  %Equal.sym(F.CC, F.gcls(c), CQ{}, F.gcls.q(c, hw, h1, h2, h3, h4, h5)) : P(_)
+  pq(h1, h2, h3, h4, h5)
+
+def F.gcase.x(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool}, +h1: {Char.is_eq(',', c) == False{} : Bool}, +h2: {Char.is_eq(':', c) == False{} : Bool}, +h3: {Char.is_eq(']', c) == False{} : Bool}, +h4: {Char.is_eq('}', c) == False{} : Bool}, +h5: {Char.is_eq('"', c) == False{} : Bool}, px: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == False{} : Bool} -> {Char.is_eq('}', c) == False{} : Bool} -> {Char.is_eq('"', c) == False{} : Bool} -> P(CX{})) -> P(F.gcls(c)):
+  %Equal.sym(F.CC, F.gcls(c), CX{}, F.gcls.x(c, hw, h1, h2, h3, h4, h5)) : P(_)
+  px(h1, h2, h3, h4, h5)
+
+# F.gcase(c, hw, P): P holds of the class of a character that is not
+# whitespace, given it for each class it can have.
+def F.gcase(-P: F.CC -> Type, +c: Char, +hw: {isws(c) == False{} : Bool},
+  pc: {Char.is_eq(',', c) == True{} : Bool} -> P(CComma{}),
+  pk: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == True{} : Bool} -> P(CColon{}),
+  pa: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == True{} : Bool} -> P(CRA{}),
+  po: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == False{} : Bool} -> {Char.is_eq('}', c) == True{} : Bool} -> P(CRO{}),
+  pq: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == False{} : Bool} -> {Char.is_eq('}', c) == False{} : Bool} -> {Char.is_eq('"', c) == True{} : Bool} -> P(CQ{}),
+  px: {Char.is_eq(',', c) == False{} : Bool} -> {Char.is_eq(':', c) == False{} : Bool} -> {Char.is_eq(']', c) == False{} : Bool} -> {Char.is_eq('}', c) == False{} : Bool} -> {Char.is_eq('"', c) == False{} : Bool} -> P(CX{})) -> P(F.gcls(c)):
+  bcase(P(F.gcls(c)), Char.is_eq(',', c), +h1 => F.gcase.c(P, c, hw, h1, pc),
+    +h1 => bcase(P(F.gcls(c)), Char.is_eq(':', c), +h2 => F.gcase.k(P, c, hw, h1, h2, pk),
+      +h2 => bcase(P(F.gcls(c)), Char.is_eq(']', c), +h3 => F.gcase.a(P, c, hw, h1, h2, h3, pa),
+        +h3 => bcase(P(F.gcls(c)), Char.is_eq('}', c), +h4 => F.gcase.o(P, c, hw, h1, h2, h3, h4, po),
+          +h4 => bcase(P(F.gcls(c)), Char.is_eq('"', c), +h5 => F.gcase.q(P, c, hw, h1, h2, h3, h4, h5, pq),
+            +h5 => F.gcase.x(P, c, hw, h1, h2, h3, h4, h5, px))))))
+
+# A value starts with what is not whitespace.
+def F.vstartG(+c: Char, -k: F.K, +hw: {isws(c) == False{} : Bool}) -> {F.step(ZC{ZV{k}, F.gcls(c), c}) == F.vstart(c, k) : F.S}:
+  F.gcase(cc => {F.step(ZC{ZV{k}, cc, c}) == F.vstart(c, k) : F.S}, c, hw, h1 => {==}, h1 => h2 => {==}, h1 => h2 => h3 => {==}, h1 => h2 => h3 => h4 => {==}, h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+# Numbers in the machine
+# ======================
+
+# Numbers in the machine
+# ======================
+
+def F.notQS(q: F.NQ) -> Bool:
+  match q:
+    case QS{}:
+      False{}
+    case _:
+      True{}
+
+def F.nnx2(b: Bool, acc: String, k: F.K, +c: Char) -> F.S:
+  match b:
+    case True{}:
+      F.nfin(acc, k, c)
+    case False{}:
+      ZX{}
+
+# The step of a number in state q, once the scanner moves to q2.
+def F.nnx(q2: F.NQ, q: F.NQ, acc: String, k: F.K, +c: Char) -> F.S:
+  match q2:
+    case QX{}:
+      F.nnx2(F.nend(q), acc, k, c)
+    case q2:
+      ZN{SCon{c, acc}, q2, k}
+
+def F.ndcS(q: F.NQ, cc: F.CC) -> {F.notQS(F.ndc(q, cc)) == True{} : Bool}:
+  match q:
+    case QS{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QM{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QZ{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QI{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QF0{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QF{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QE0{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QES{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QE{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QX{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+
+def F.nstepEq(q: F.NQ, cc: F.CC, -acc: String, -k: F.K, +c: Char, +h: {F.notQS(q) == True{} : Bool}) -> {F.step(ZC{ZN{acc, q, k}, cc, c}) == F.nnx(F.ndc(q, cc), q, acc, k, c) : F.S}:
+  match q:
+    case QS{}:
+      Empty.absurd({F.step(ZC{ZN{acc, QS{}, k}, cc, c}) == F.nnx(F.ndc(QS{}, cc), QS{}, acc, k, c) : F.S}, false_ne_true(h))
+    case QM{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QZ{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QI{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QF0{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QF{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QE0{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QES{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QE{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+    case QX{}:
+      match cc:
+        case CQ{}:
+          {==}
+        case CB{}:
+          {==}
+        case CW{}:
+          {==}
+        case CComma{}:
+          {==}
+        case CColon{}:
+          {==}
+        case CRA{}:
+          {==}
+        case CRO{}:
+          {==}
+        case CZ{}:
+          {==}
+        case CD{}:
+          {==}
+        case CDot{}:
+          {==}
+        case CE{}:
+          {==}
+        case CP{}:
+          {==}
+        case CM{}:
+          {==}
+        case CX{}:
+          {==}
+        case CBad{}:
+          {==}
+
+def F.nm2(+n: String, b: Bool, +e: {F.nacc(n, QS{}) == b : Bool}) -> {F.numMk2(b, n, e) == numV(numMaybe(numTry(n, b, e))) : Maybe<V>}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.nm(+n: String) -> {F.numMk(n) == numV(Laws.Number.make.try.era(n)) : Maybe<V>}:
+  F.nm2(n, F.nacc(n, QS{}), {==})
+
+# What the machine answers after the value m, then u, in context k.
+def F.obsV(m: Maybe<V>, u: String, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{v}:
+      F.obs(u, F.complete(v, k))
+
+# A number whose characters so far are acc, last first, then what the scanner
+# reads of the rest.
+def F.RN(m: Maybe<&2, SP>, acc: String, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{p}:
+      match p:
+        case SP{a, u}:
+          F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, a))), u, k)
+
+def F.RN.prep(+c: Char, m: Maybe<&2, SP>, -acc: String, -k: F.K) -> {F.RN(prepM(c, m), acc, k) == F.RN(m, SCon{c, acc}, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case SP{a, u}:
+          {==}
+
+def F.stepC.d(-v: V, cc: F.CC, +c: Char) -> {F.step(ZC{ZD{v}, cc, c}) == F.after(ZD{v}, cc) : F.S}:
+  match cc:
+    case CQ{}:
+      {==}
+    case CB{}:
+      {==}
+    case CW{}:
+      {==}
+    case CComma{}:
+      {==}
+    case CColon{}:
+      {==}
+    case CRA{}:
+      {==}
+    case CRO{}:
+      {==}
+    case CZ{}:
+      {==}
+    case CD{}:
+      {==}
+    case CDot{}:
+      {==}
+    case CE{}:
+      {==}
+    case CP{}:
+      {==}
+    case CM{}:
+      {==}
+    case CX{}:
+      {==}
+    case CBad{}:
+      {==}
+
+def F.stepC.a(-v: V, -xs: List<V>, -k2: F.K, cc: F.CC, +c: Char) -> {F.step(ZC{ZAN{v <> xs, k2}, cc, c}) == F.after(ZAN{v <> xs, k2}, cc) : F.S}:
+  match cc:
+    case CQ{}:
+      {==}
+    case CB{}:
+      {==}
+    case CW{}:
+      {==}
+    case CComma{}:
+      {==}
+    case CColon{}:
+      {==}
+    case CRA{}:
+      {==}
+    case CRO{}:
+      {==}
+    case CZ{}:
+      {==}
+    case CD{}:
+      {==}
+    case CDot{}:
+      {==}
+    case CE{}:
+      {==}
+    case CP{}:
+      {==}
+    case CM{}:
+      {==}
+    case CX{}:
+      {==}
+    case CBad{}:
+      {==}
+
+def F.stepC.o(-v: V, -key: TxtT, -ms: List<(TxtT & V)>, -k2: F.K, cc: F.CC, +c: Char) -> {F.step(ZC{ZON{(key, v) <> ms, k2}, cc, c}) == F.after(ZON{(key, v) <> ms, k2}, cc) : F.S}:
+  match cc:
+    case CQ{}:
+      {==}
+    case CB{}:
+      {==}
+    case CW{}:
+      {==}
+    case CComma{}:
+      {==}
+    case CColon{}:
+      {==}
+    case CRA{}:
+      {==}
+    case CRO{}:
+      {==}
+    case CZ{}:
+      {==}
+    case CD{}:
+      {==}
+    case CDot{}:
+      {==}
+    case CE{}:
+      {==}
+    case CP{}:
+      {==}
+    case CM{}:
+      {==}
+    case CX{}:
+      {==}
+    case CBad{}:
+      {==}
+
+# Once a value is complete, the machine reads what follows as after does.
+def F.stepC(-v: V, k: F.K, +c: Char) -> {F.step(F.ccls(F.complete(v, k), c)) == F.after(F.complete(v, k), F.gcls(c)) : F.S}:
+  match k:
+    case KTop{}:
+      F.stepC.d(v, F.gcls(c), c)
+    case KA{xs, k2}:
+      F.stepC.a(v, xs, k2, F.gcls(c), c)
+    case KO{key, ms, k2}:
+      F.stepC.o(v, key, ms, k2, F.gcls(c), c)
+    case KKey{ms, k2}:
+      {==}
+
+# What a stack k gives about the value completed in it.
+def F.KF(k: F.K) -> Type:
+  (@v:V -> {F.fin(F.complete(v, k)) == F.finK(v, k) : Maybe<V>}) & (@v:V -> @c:Char -> {F.step(F.ccls(F.complete(v, k), c)) == F.after(F.complete(v, k), F.gcls(c)) : F.S}) & (@tx:TxtT -> {F.skey(tx, k) == F.complete(VStr{tx}, k) : F.S})
+
+def F.KF.top() -> F.KF(KTop{}):
+  (v => {==}, v => +c => F.stepC.d(v, F.gcls(c), c), tx => {==})
+
+def F.KF.a(-xs: List<V>, -k: F.K) -> F.KF(KA{xs, k}):
+  (v => {==}, v => +c => F.stepC.a(v, xs, k, F.gcls(c), c), tx => {==})
+
+def F.KF.o(-key: TxtT, -ms: List<(TxtT & V)>, -k: F.K) -> F.KF(KO{key, ms, k}):
+  (v => {==}, v => +c => F.stepC.o(v, key, ms, k, F.gcls(c), c), tx => {==})
+
+def F.nsim.y(m: Maybe<V>, +c: Char, +t2: String, -k: F.K, f2: @v:V -> @c:Char -> {F.step(F.ccls(F.complete(v, k), c)) == F.after(F.complete(v, k), F.gcls(c)) : F.S}) -> {F.obs(t2, F.nfin2(m, k, c)) == F.obsV(m, SCon{c, t2}, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      F.runX.obs(t2)
+    case Some{v}:
+      F.obsCong(t2, t2, F.after(F.complete(v, k), F.gcls(c)), F.step(F.ccls(F.complete(v, k), c)), Equal.cong(F.S, F.S, x => F.run(t2, x), F.after(F.complete(v, k), F.gcls(c)), F.step(F.ccls(F.complete(v, k), c)), Equal.sym(F.S, F.step(F.ccls(F.complete(v, k), c)), F.after(F.complete(v, k), F.gcls(c)), f2(v, c))))
+
+def F.nsim.x2(+c: Char, +t2: String, +acc: String, -k: F.K, kf: F.KF(k)) -> {F.obs(t2, F.nfin(acc, k, c)) == F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), SCon{c, t2}, k) : Maybe<V>}:
+  match kf:
+    case (f1, f2, f3):
+      %Equal.sym(Maybe<V>, F.numMk(F.rev(acc, SNil{})), numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), F.nm(F.rev(acc, SNil{}))) : {F.obs(t2, F.nfin2(_, k, c)) == F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), SCon{c, t2}, k) : Maybe<V>}
+      F.nsim.y(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), c, t2, k, f2)
+
+def F.nsim.x(b: Bool, +c: Char, +t2: String, +acc: String, -k: F.K, kf: F.KF(k)) -> {F.obs(t2, F.nnx2(b, acc, k, c)) == F.RN(F.cend(b, c, t2), acc, k) : Maybe<V>}:
+  match b:
+    case False{}:
+      F.runX.obs(t2)
+    case True{}:
+      F.nsim.x2(c, t2, acc, k, kf)
+
+def F.nsim.s(q2: F.NQ, +q: F.NQ, +c: Char, +t2: String, +acc: String, -k: F.K, kf: F.KF(k), +hq: {F.notQS(q2) == True{} : Bool}, ih: @q3:F.NQ -> @a3:String -> @kf3:F.KF(k) -> {F.notQS(q3) == True{} : Bool} -> {F.obs(t2, ZN{a3, q3, k}) == F.RN(F.cont(q3, t2), a3, k) : Maybe<V>}) -> {F.obs(t2, F.nnx(q2, q, acc, k, c)) == F.RN(F.cnext(q2, q, c, t2), acc, k) : Maybe<V>}:
+  match q2:
+    case QS{}:
+      Empty.absurd({F.obs(t2, F.nnx(QS{}, q, acc, k, c)) == F.RN(F.cnext(QS{}, q, c, t2), acc, k) : Maybe<V>}, false_ne_true(hq))
+    case QM{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QM{}, k}), F.RN(F.cont(QM{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QM{}, t2)), acc, k), ih(QM{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QM{}, t2)), acc, k), F.RN(F.cont(QM{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QM{}, t2), acc, k)))
+    case QZ{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QZ{}, k}), F.RN(F.cont(QZ{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QZ{}, t2)), acc, k), ih(QZ{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QZ{}, t2)), acc, k), F.RN(F.cont(QZ{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QZ{}, t2), acc, k)))
+    case QI{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QI{}, k}), F.RN(F.cont(QI{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QI{}, t2)), acc, k), ih(QI{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QI{}, t2)), acc, k), F.RN(F.cont(QI{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QI{}, t2), acc, k)))
+    case QF0{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QF0{}, k}), F.RN(F.cont(QF0{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QF0{}, t2)), acc, k), ih(QF0{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QF0{}, t2)), acc, k), F.RN(F.cont(QF0{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QF0{}, t2), acc, k)))
+    case QF{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QF{}, k}), F.RN(F.cont(QF{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QF{}, t2)), acc, k), ih(QF{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QF{}, t2)), acc, k), F.RN(F.cont(QF{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QF{}, t2), acc, k)))
+    case QE0{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QE0{}, k}), F.RN(F.cont(QE0{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QE0{}, t2)), acc, k), ih(QE0{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QE0{}, t2)), acc, k), F.RN(F.cont(QE0{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QE0{}, t2), acc, k)))
+    case QES{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QES{}, k}), F.RN(F.cont(QES{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QES{}, t2)), acc, k), ih(QES{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QES{}, t2)), acc, k), F.RN(F.cont(QES{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QES{}, t2), acc, k)))
+    case QE{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZN{SCon{c, acc}, QE{}, k}), F.RN(F.cont(QE{}, t2), SCon{c, acc}, k), F.RN(prepM(c, F.cont(QE{}, t2)), acc, k), ih(QE{}, SCon{c, acc}, kf, {==}), Equal.sym(Maybe<V>, F.RN(prepM(c, F.cont(QE{}, t2)), acc, k), F.RN(F.cont(QE{}, t2), SCon{c, acc}, k), F.RN.prep(c, F.cont(QE{}, t2), acc, k)))
+    case QX{}:
+      F.nsim.x(F.nend(q), c, t2, acc, k, kf)
+
+def F.obsV.top(m: Maybe<V>) -> {F.obsV(m, SNil{}, KTop{}) == m : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{v}:
+      {==}
+
+def F.isTop(k: F.K) -> Bool:
+  match k:
+    case KTop{}:
+      True{}
+    case _:
+      False{}
+
+def F.obsV.none(m: Maybe<V>, k: F.K, +hk: {F.isTop(k) == False{} : Bool}) -> {F.obsV(m, SNil{}, k) == None{} : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{v}:
+      match k:
+        case KTop{}:
+          Empty.absurd({F.obsV(Some{v}, SNil{}, KTop{}) == None{} : Maybe<V>}, bne(hk))
+        case KA{xs, k2}:
+          {==}
+        case KO{key, ms, k2}:
+          {==}
+        case KKey{ms, k2}:
+          {==}
+
+def F.finMObs(m: Maybe<V>, -k: F.K, f1: @v:V -> {F.fin(F.complete(v, k)) == F.finK(v, k) : Maybe<V>}) -> {F.finM(m, k) == F.obsV(m, SNil{}, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{v}:
+      Equal.sym(Maybe<V>, F.fin(F.complete(v, k)), F.finK(v, k), f1(v))
+
+def F.nsim0(q: F.NQ, +acc: String, -k: F.K, kf: F.KF(k), +h: {F.notQS(q) == True{} : Bool}) -> {F.obs(SNil{}, ZN{acc, q, k}) == F.RN(F.cont(q, SNil{}), acc, k) : Maybe<V>}:
+  match q:
+    case QS{}:
+      Empty.absurd({F.obs(SNil{}, ZN{acc, QS{}, k}) == F.RN(F.cont(QS{}, SNil{}), acc, k) : Maybe<V>}, false_ne_true(h))
+    case QM{}:
+      {==}
+    case QZ{}:
+      match kf:
+        case (f1, f2, f3):
+          Equal.trans(Maybe<V>, F.finM(F.numMk(F.rev(acc, SNil{})), k), F.finM(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k), F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), SNil{}, k), Equal.cong(Maybe<V>, Maybe<V>, x => F.finM(x, k), F.numMk(F.rev(acc, SNil{})), numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), F.nm(F.rev(acc, SNil{}))), F.finMObs(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k, f1))
+    case QI{}:
+      match kf:
+        case (f1, f2, f3):
+          Equal.trans(Maybe<V>, F.finM(F.numMk(F.rev(acc, SNil{})), k), F.finM(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k), F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), SNil{}, k), Equal.cong(Maybe<V>, Maybe<V>, x => F.finM(x, k), F.numMk(F.rev(acc, SNil{})), numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), F.nm(F.rev(acc, SNil{}))), F.finMObs(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k, f1))
+    case QF0{}:
+      {==}
+    case QF{}:
+      match kf:
+        case (f1, f2, f3):
+          Equal.trans(Maybe<V>, F.finM(F.numMk(F.rev(acc, SNil{})), k), F.finM(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k), F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), SNil{}, k), Equal.cong(Maybe<V>, Maybe<V>, x => F.finM(x, k), F.numMk(F.rev(acc, SNil{})), numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), F.nm(F.rev(acc, SNil{}))), F.finMObs(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k, f1))
+    case QE0{}:
+      {==}
+    case QES{}:
+      {==}
+    case QE{}:
+      match kf:
+        case (f1, f2, f3):
+          Equal.trans(Maybe<V>, F.finM(F.numMk(F.rev(acc, SNil{})), k), F.finM(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k), F.obsV(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), SNil{}, k), Equal.cong(Maybe<V>, Maybe<V>, x => F.finM(x, k), F.numMk(F.rev(acc, SNil{})), numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), F.nm(F.rev(acc, SNil{}))), F.finMObs(numV(Laws.Number.make.try.era(F.rev(acc, SNil{}))), k, f1))
+    case QX{}:
+      {==}
+
+# A number in the machine reads as num_scan.
+def F.nsim(t: String, +acc: String, +q: F.NQ, -k: F.K, kf: F.KF(k), +h: {F.notQS(q) == True{} : Bool}) -> {F.obs(t, ZN{acc, q, k}) == F.RN(F.cont(q, t), acc, k) : Maybe<V>}:
+  match t:
+    case SNil{}:
+      F.nsim0(q, acc, k, kf, h)
+    case SCon{+c, +t2}:
+      %Equal.sym(F.S, F.step(ZC{ZN{acc, q, k}, F.ncls(c), c}), F.nnx(F.ndc(q, F.ncls(c)), q, acc, k, c), F.nstepEq(q, F.ncls(c), acc, k, c, h)) : {F.obs(t2, _) == F.RN(F.cont(q, SCon{c, t2}), acc, k) : Maybe<V>}
+      %Equal.sym(Maybe<&2, SP>, F.cont(q, SCon{c, t2}), F.cnext(F.ndc(q, F.ncls(c)), q, c, t2), F.cs(q, c, t2)) : {F.obs(t2, F.nnx(F.ndc(q, F.ncls(c)), q, acc, k, c)) == F.RN(_, acc, k) : Maybe<V>}
+      F.nsim.s(F.ndc(q, F.ncls(c)), q, c, t2, acc, k, kf, F.ndcS(q, F.ncls(c)), q3 => a3 => kf3 => h3 => F.nsim(t2, a3, q3, k, kf3, h3))
+
+# Literals
+# ========
+
+def F.RL(b: Bool, t: String, n: Nat, v: V, k: F.K) -> Maybe<V>:
+  match b:
+    case True{}:
+      F.obs(String.drop(t, n), F.complete(v, k))
+    case False{}:
+      None{}
+
+def F.drop0(t: String) -> {String.drop(t, 0n) == t : String}:
+  match t:
+    case SNil{}:
+      {==}
+    case SCon{c, r}:
+      {==}
+
+def F.RL.shift(b: Bool, +c: Char, -t2: String, -n: Nat, -v: V, -k: F.K) -> {F.RL(b, SCon{c, t2}, 1n+n, v, k) == F.RL(b, t2, n, v, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.lsim.b(b: Bool, +c: Char, +t2: String, rs: String, -v: V, -k: F.K, ih: @r2:Char -> @rs2:String -> {F.obs(t2, ZL{SCon{r2, rs2}, v, k}) == F.RL(String.starts_with(t2, SCon{r2, rs2}), t2, String.length(SCon{r2, rs2}), v, k) : Maybe<V>})
+  -> {F.obs(t2, F.lstep2(b, rs, v, k)) == F.RL(String.starts_with.go.if(rs, t2, b), SCon{c, t2}, String.length(SCon{c, rs}), v, k) : Maybe<V>}:
+  match b:
+    case False{}:
+      F.runX.obs(t2)
+    case True{}:
+      match rs:
+        case SNil{}:
+          %Equal.sym(String, String.drop(t2, 0n), t2, F.drop0(t2)) : {F.obs(t2, F.complete(v, k)) == F.obs(_, F.complete(v, k)) : Maybe<V>}
+          {==}
+        case SCon{+r2, +rs2}:
+          Equal.trans(Maybe<V>, F.obs(t2, ZL{SCon{r2, rs2}, v, k}), F.RL(String.starts_with(t2, SCon{r2, rs2}), t2, String.length(SCon{r2, rs2}), v, k), F.RL(String.starts_with(t2, SCon{r2, rs2}), SCon{c, t2}, 1n+String.length(SCon{r2, rs2}), v, k),
+            ih(r2, rs2), Equal.sym(Maybe<V>, F.RL(String.starts_with(t2, SCon{r2, rs2}), SCon{c, t2}, 1n+String.length(SCon{r2, rs2}), v, k), F.RL(String.starts_with(t2, SCon{r2, rs2}), t2, String.length(SCon{r2, rs2}), v, k), F.RL.shift(String.starts_with(t2, SCon{r2, rs2}), c, t2, String.length(SCon{r2, rs2}), v, k)))
+
+# A literal in the machine reads as starts_with.
+def F.lsim(t: String, +r: Char, +rs: String, -v: V, -k: F.K) -> {F.obs(t, ZL{SCon{r, rs}, v, k}) == F.RL(String.starts_with(t, SCon{r, rs}), t, String.length(SCon{r, rs}), v, k) : Maybe<V>}:
+  match t:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t2}:
+      F.lsim.b(Char.is_eq(c, r), c, t2, rs, v, k, r2 => rs2 => F.lsim(t2, r2, rs2, v, k))
+
+# Strings in the machine
+# ======================
+
+def F.symF.c(+a: Char, +c: Char, +ha: {Char.is_eq(a, a) == True{} : Bool}, +h: {Char.is_eq(a, c) == False{} : Bool}, +k: {Char.is_eq(c, a) == True{} : Bool}) -> Empty:
+  bne(Equal.trans(Bool, True{}, Char.is_eq(a, a), False{}, Equal.sym(Bool, Char.is_eq(a, a), True{}, ha), Equal.trans(Bool, Char.is_eq(a, a), Char.is_eq(a, c), False{}, Equal.cong(Char, Bool, x => Char.is_eq(a, x), a, c, Equal.sym(Char, c, a, char_eq(c, a, k))), h)))
+
+def F.symF(+a: Char, +c: Char, +ha: {Char.is_eq(a, a) == True{} : Bool}, +h: {Char.is_eq(a, c) == False{} : Bool}) -> {Char.is_eq(c, a) == False{} : Bool}:
+  bcase({Char.is_eq(c, a) == False{} : Bool}, Char.is_eq(c, a), +k => Empty.absurd({Char.is_eq(c, a) == False{} : Bool}, F.symF.c(a, c, ha, h, k)), +k => k)
+
+def F.emitRev(p: Maybe<&2, U32>, -acc: String, -s: String) -> {F.rev(acc, emit(p, s)) == F.rev(F.emitA(p, acc), s) : String}:
+  match p:
+    case None{}:
+      {==}
+    case Some{h}:
+      {==}
+
+def F.revrev(P: String, -acc: String, -X: String) -> {F.rev(F.rev(P, acc), X) == F.rev(acc, String.append(P, X)) : String}:
+  match P:
+    case SNil{}:
+      {==}
+    case SCon{p1, Q}:
+      F.revrev(Q, SCon{p1, acc}, X)
+
+# The machine's state in a string: what dec has read (desc) and the pending
+# high surrogate p.
+def F.sst(desc: DS, p: Maybe<&2, U32>, acc: String, d: F.K) -> F.S:
+  match desc:
+    case DN{}:
+      match p:
+        case None{}:
+          ZS{acc, d}
+        case Some{h}:
+          ZQ{acc, h, d}
+    case DE{}:
+      match p:
+        case None{}:
+          ZE{acc, d}
+        case Some{h}:
+          ZQE{acc, h, d}
+    case DU{ds}:
+      F.uwait(p, ds, acc, d)
+
+def F.shn(ds: String) -> Nat:
+  match ds:
+    case SNil{}:
+      3n
+    case SCon{a, r}:
+      match r:
+        case SNil{}:
+          2n
+        case SCon{b, r2}:
+          match r2:
+            case SNil{}:
+              1n
+            case SCon{e, r3}:
+              0n
+
+# str_scan's state for what dec has read.
+def F.sscan(desc: DS) -> SS:
+  match desc:
+    case DN{}:
+      SN{}
+    case DE{}:
+      SE{}
+    case DU{ds}:
+      SH{F.shn(ds)}
+
+# At most three digits of a \\u are read before its last.
+def F.digG(d0: Bool, d1: Bool, d2: Bool, d3: Bool, d4: Bool, d5: Bool, d6: Bool, d7: Bool, d8: Bool, d9: Bool) -> Bool:
+  Bool.or(d0, Bool.or(d1, Bool.or(d2, Bool.or(d3, Bool.or(d4, Bool.or(d5, Bool.or(d6, Bool.or(d7, Bool.or(d8, Bool.or(d9, False{}))))))))))
+
+def F.ishexG(d: Bool, l0: Bool, l1: Bool, l2: Bool, l3: Bool, l4: Bool, l5: Bool, l6: Bool, l7: Bool, l8: Bool, l9: Bool, l10: Bool, l11: Bool) -> Bool:
+  Bool.or(d, Bool.or(Bool.or(l0, Bool.or(l1, False{})), Bool.or(Bool.or(l2, Bool.or(l3, False{})), Bool.or(Bool.or(l4, Bool.or(l5, False{})), Bool.or(Bool.or(l6, Bool.or(l7, False{})), Bool.or(Bool.or(l8, Bool.or(l9, False{})), Bool.or(Bool.or(l10, Bool.or(l11, False{})), False{})))))))
+
+def F.inRF(+c: Char, +n0: {Char.is_eq('0', c) == False{} : Bool}, +n1: {Char.is_eq('1', c) == False{} : Bool}, +n2: {Char.is_eq('2', c) == False{} : Bool}, +n3: {Char.is_eq('3', c) == False{} : Bool}, +n4: {Char.is_eq('4', c) == False{} : Bool}, +n5: {Char.is_eq('5', c) == False{} : Bool}, +n6: {Char.is_eq('6', c) == False{} : Bool}, +n7: {Char.is_eq('7', c) == False{} : Bool}, +n8: {Char.is_eq('8', c) == False{} : Bool}, +n9: {Char.is_eq('9', c) == False{} : Bool}) -> {inR('0', '9', c) == False{} : Bool}:
+  %rangeB('0', '9', c) : {_ == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('0', c), False{}, n0) : {F.digG(_, Char.is_eq('1', c), Char.is_eq('2', c), Char.is_eq('3', c), Char.is_eq('4', c), Char.is_eq('5', c), Char.is_eq('6', c), Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('1', c), False{}, n1) : {F.digG(False{}, _, Char.is_eq('2', c), Char.is_eq('3', c), Char.is_eq('4', c), Char.is_eq('5', c), Char.is_eq('6', c), Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('2', c), False{}, n2) : {F.digG(False{}, False{}, _, Char.is_eq('3', c), Char.is_eq('4', c), Char.is_eq('5', c), Char.is_eq('6', c), Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('3', c), False{}, n3) : {F.digG(False{}, False{}, False{}, _, Char.is_eq('4', c), Char.is_eq('5', c), Char.is_eq('6', c), Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('4', c), False{}, n4) : {F.digG(False{}, False{}, False{}, False{}, _, Char.is_eq('5', c), Char.is_eq('6', c), Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('5', c), False{}, n5) : {F.digG(False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('6', c), Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('6', c), False{}, n6) : {F.digG(False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('7', c), Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('7', c), False{}, n7) : {F.digG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('8', c), Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('8', c), False{}, n8) : {F.digG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('9', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('9', c), False{}, n9) : {F.digG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _) == False{} : Bool}
+  {==}
+
+def F.ishexF(+c: Char, +nd: {inR('0', '9', c) == False{} : Bool}, +m0: {Char.is_eq('a', c) == False{} : Bool}, +m1: {Char.is_eq('A', c) == False{} : Bool}, +m2: {Char.is_eq('b', c) == False{} : Bool}, +m3: {Char.is_eq('B', c) == False{} : Bool}, +m4: {Char.is_eq('c', c) == False{} : Bool}, +m5: {Char.is_eq('C', c) == False{} : Bool}, +m6: {Char.is_eq('d', c) == False{} : Bool}, +m7: {Char.is_eq('D', c) == False{} : Bool}, +m8: {Char.is_eq('e', c) == False{} : Bool}, +m9: {Char.is_eq('E', c) == False{} : Bool}, +m10: {Char.is_eq('f', c) == False{} : Bool}, +m11: {Char.is_eq('F', c) == False{} : Bool}) -> {ishex(c) == False{} : Bool}:
+  %Equal.sym(Bool, inR('0', '9', c), False{}, nd) : {F.ishexG(_, Char.is_eq('a', c), Char.is_eq('A', c), Char.is_eq('b', c), Char.is_eq('B', c), Char.is_eq('c', c), Char.is_eq('C', c), Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('a', c), False{}, m0) : {F.ishexG(False{}, _, Char.is_eq('A', c), Char.is_eq('b', c), Char.is_eq('B', c), Char.is_eq('c', c), Char.is_eq('C', c), Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('A', c), False{}, m1) : {F.ishexG(False{}, False{}, _, Char.is_eq('b', c), Char.is_eq('B', c), Char.is_eq('c', c), Char.is_eq('C', c), Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('b', c), False{}, m2) : {F.ishexG(False{}, False{}, False{}, _, Char.is_eq('B', c), Char.is_eq('c', c), Char.is_eq('C', c), Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('B', c), False{}, m3) : {F.ishexG(False{}, False{}, False{}, False{}, _, Char.is_eq('c', c), Char.is_eq('C', c), Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('c', c), False{}, m4) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('C', c), Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('C', c), False{}, m5) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('d', c), Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('d', c), False{}, m6) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('D', c), Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('D', c), False{}, m7) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('e', c), Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('e', c), False{}, m8) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('E', c), Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('E', c), False{}, m9) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('f', c), Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('f', c), False{}, m10) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _, Char.is_eq('F', c)) == False{} : Bool}
+  %Equal.sym(Bool, Char.is_eq('F', c), False{}, m11) : {F.ishexG(False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, _) == False{} : Bool}
+  {==}
+
+def F.hxL0(+c: Char, +k: {Char.is_eq('0', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('0', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL1(+c: Char, +k: {Char.is_eq('1', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('1', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL2(+c: Char, +k: {Char.is_eq('2', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('2', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL3(+c: Char, +k: {Char.is_eq('3', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('3', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL4(+c: Char, +k: {Char.is_eq('4', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('4', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL5(+c: Char, +k: {Char.is_eq('5', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('5', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL6(+c: Char, +k: {Char.is_eq('6', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('6', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL7(+c: Char, +k: {Char.is_eq('7', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('7', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL8(+c: Char, +k: {Char.is_eq('8', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('8', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL9(+c: Char, +k: {Char.is_eq('9', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('9', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL10(+c: Char, +k: {Char.is_eq('a', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('a', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL11(+c: Char, +k: {Char.is_eq('b', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('b', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL12(+c: Char, +k: {Char.is_eq('c', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('c', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL13(+c: Char, +k: {Char.is_eq('d', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('d', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL14(+c: Char, +k: {Char.is_eq('e', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('e', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL15(+c: Char, +k: {Char.is_eq('f', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('f', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL16(+c: Char, +k: {Char.is_eq('A', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('A', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL17(+c: Char, +k: {Char.is_eq('B', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('B', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL18(+c: Char, +k: {Char.is_eq('C', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('C', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL19(+c: Char, +k: {Char.is_eq('D', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('D', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL20(+c: Char, +k: {Char.is_eq('E', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('E', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+def F.hxL21(+c: Char, +k: {Char.is_eq('F', c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  %char_eq('F', c, k) : {F.hx(_) == True{} : Bool}
+  {==}
+
+# What the machine's ishex accepts, F.hx accepts.
+def F.hxI(+c: Char, +h: {ishex(c) == True{} : Bool}) -> {F.hx(c) == True{} : Bool}:
+  bcase({F.hx(c) == True{} : Bool}, Char.is_eq('0', c), +k => F.hxL0(c, k), +n0 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('1', c), +k => F.hxL1(c, k), +n1 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('2', c), +k => F.hxL2(c, k), +n2 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('3', c), +k => F.hxL3(c, k), +n3 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('4', c), +k => F.hxL4(c, k), +n4 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('5', c), +k => F.hxL5(c, k), +n5 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('6', c), +k => F.hxL6(c, k), +n6 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('7', c), +k => F.hxL7(c, k), +n7 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('8', c), +k => F.hxL8(c, k), +n8 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('9', c), +k => F.hxL9(c, k), +n9 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('a', c), +k => F.hxL10(c, k), +n10 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('b', c), +k => F.hxL11(c, k), +n11 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('c', c), +k => F.hxL12(c, k), +n12 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('d', c), +k => F.hxL13(c, k), +n13 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('e', c), +k => F.hxL14(c, k), +n14 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('f', c), +k => F.hxL15(c, k), +n15 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('A', c), +k => F.hxL16(c, k), +n16 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('B', c), +k => F.hxL17(c, k), +n17 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('C', c), +k => F.hxL18(c, k), +n18 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('D', c), +k => F.hxL19(c, k), +n19 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('E', c), +k => F.hxL20(c, k), +n20 => bcase({F.hx(c) == True{} : Bool}, Char.is_eq('F', c), +k => F.hxL21(c, k), +n21 => Empty.absurd({F.hx(c) == True{} : Bool}, contra(ishex(c), h, F.ishexF(c, F.inRF(c, n0, n1, n2, n3, n4, n5, n6, n7, n8, n9), n10, n16, n11, n17, n12, n18, n13, n19, n14, n20, n15, n21)))))))))))))))))))))))))
+
+def F.and2(-a: Bool, -b: Bool, +ha: {a == True{} : Bool}, +hb: {b == True{} : Bool}) -> {Bool.and(a, b) == True{} : Bool}:
+  %Equal.sym(Bool, a, True{}, ha) : {Bool.and(_, b) == True{} : Bool}
+  %Equal.sym(Bool, b, True{}, hb) : {Bool.and(True{}, _) == True{} : Bool}
+  {==}
+
+# A \u escape's digits so far: at most three, each one ishex accepted.
+def F.dsOk(desc: DS) -> Bool:
+  match desc:
+    case DU{ds}:
+      match ds:
+        case SNil{}:
+          True{}
+        case SCon{+a, r}:
+          match r:
+            case SNil{}:
+              ishex(a)
+            case SCon{+b, r2}:
+              match r2:
+                case SNil{}:
+                  Bool.and(ishex(a), ishex(b))
+                case SCon{+e, r3}:
+                  match r3:
+                    case SNil{}:
+                      Bool.and(ishex(a), Bool.and(ishex(b), ishex(e)))
+                    case SCon{f, r4}:
+                      False{}
+    case _:
+      True{}
+
+def F.obsT2(m: Maybe<TxtT>, u: String, d: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{tx}:
+      F.obs(u, F.skey(tx, d))
+
+# What the machine answers once a string whose text is text ends, then u.
+def F.obsT(text: String, u: String, d: F.K) -> Maybe<V>:
+  F.obsT2(Laws.Text.make.try.era(text), u, d)
+
+# A string whose text so far is acc, last first, after what str_scan reads.
+def F.RS(m: Maybe<&2, SP>, acc: String, desc: DS, p: Maybe<&2, U32>, d: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{q}:
+      match q:
+        case SP{a, u}:
+          F.obsT(F.rev(acc, dec(a, desc, p)), u, d)
+
+def F.RS.prep(+c: Char, m: Maybe<&2, SP>, -acc: String, -desc: DS, -p: Maybe<&2, U32>, -acc2: String, -desc2: DS, -p2: Maybe<&2, U32>, -d: F.K, e: @a:String -> {F.rev(acc, dec(SCon{c, a}, desc, p)) == F.rev(acc2, dec(a, desc2, p2)) : String}) -> {F.RS(prepM(c, m), acc, desc, p, d) == F.RS(m, acc2, desc2, p2, d) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{q}:
+      match q:
+        case SP{a, u}:
+          Equal.cong(String, Maybe<V>, x => F.obsT(x, u, d), F.rev(acc, dec(SCon{c, a}, desc, p)), F.rev(acc2, dec(a, desc2, p2)), e(a))
+
+def F.iuF.b(b: Bool, -y: String, +hy: {F.iu(y) == False{} : Bool}) -> {List.all.if(u => List.all(~&2, ~Char, ~(x => (Char.to_u32(x) <= 1114111 : U32)), String.to_list(y)), b) == False{} : Bool}:
+  match b:
+    case True{}:
+      hy
+    case False{}:
+      {==}
+
+def F.iuF(+h: Char, -y: String, +hy: {F.iu(y) == False{} : Bool}) -> {F.iu(SCon{h, y}) == False{} : Bool}:
+  F.iuF.b(F.cu(h), y, hy)
+
+# Turning the text around checks it as Text.make.try does.
+def F.iuR(x: String, -y: String, +hy: {F.iu(y) == False{} : Bool}) -> {F.iu(F.rev(x, y)) == False{} : Bool}:
+  match x:
+    case SNil{}:
+      hy
+    case SCon{+h, r}:
+      F.iuR(r, SCon{h, y}, F.iuF(h, y, hy))
+
+def F.iuC0(-c: Char, -out: String, +eb: {F.cu(c) == False{} : Bool}) -> {F.iu(SCon{c, out}) == False{} : Bool}:
+  %Equal.sym(Bool, F.cu(c), False{}, eb) : {List.all.if(u => List.all(~&2, ~Char, ~(x => (Char.to_u32(x) <= 1114111 : U32)), String.to_list(out)), _) == False{} : Bool}
+  {==}
+
+def F.tryT(+s: String, +h: {F.iu(s) == True{} : Bool}) -> {Laws.Text.make.try.era(s) == Some{TMk{s, h}} : Maybe<TxtT>}:
+  Laws.Text.make.try.era.valid(s, TMk{s, h}, Laws.Text.make.try.valid(s, h))
+
+def F.tryF(+s: String, +h: {F.iu(s) == False{} : Bool}) -> {Laws.Text.make.try.era(s) == None{} : Maybe<TxtT>}:
+  Laws.Text.make.try.era.invalid(s, s, Laws.Text.make.try.invalid(s, h))
+
+def F.txg(t: String, +out: String, +ho: {F.iu(out) == True{} : Bool}, +c: Char, b: Bool, +eb: {F.cu(c) == b : Bool}) -> {F.revU(t, out, ho, c, b, eb) == Laws.Text.make.try.era(F.rev(t, SCon{c, out})) : Maybe<TxtT>}:
+  match t:
+    case SNil{}:
+      match b:
+        case True{}:
+          Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(SCon{c, out}), Some{TMk{SCon{c, out}, F.iuCons(c, out, eb, ho)}}, F.tryT(SCon{c, out}, F.iuCons(c, out, eb, ho)))
+        case False{}:
+          Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(SCon{c, out}), None{}, F.tryF(SCon{c, out}, F.iuC0(c, out, eb)))
+    case SCon{+c2, +t2}:
+      match b:
+        case True{}:
+          F.txg(t2, SCon{c, out}, F.iuCons(c, out, eb, ho), c2, F.cu(c2), {==})
+        case False{}:
+          Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(F.rev(t2, SCon{c2, SCon{c, out}})), None{}, F.tryF(F.rev(t2, SCon{c2, SCon{c, out}}), F.iuR(t2, SCon{c2, SCon{c, out}}, F.iuF(c2, SCon{c, out}, F.iuC0(c, out, eb)))))
+
+def F.tx(acc: String) -> {F.textOf(acc) == Laws.Text.make.try.era(F.rev(acc, SNil{})) : Maybe<TxtT>}:
+  match acc:
+    case SNil{}:
+      Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(SNil{}), Some{TMk{SNil{}, {==}}}, F.tryT(SNil{}, {==}))
+    case SCon{+c, +t}:
+      F.txg(t, SNil{}, {==}, c, F.cu(c), {==})
+
+def F.sdoneObs2(m: Maybe<TxtT>, +u: String, -d: F.K) -> {F.obs(u, F.sdone2(m, d)) == F.obsT2(m, u, d) : Maybe<V>}:
+  match m:
+    case None{}:
+      F.runX.obs(u)
+    case Some{tx}:
+      {==}
+
+# A string ends: the machine answers as obsT.
+def F.sdoneObs(+acc: String, +u: String, -d: F.K) -> {F.obs(u, F.sdone(acc, d)) == F.obsT(F.rev(acc, SNil{}), u, d) : Maybe<V>}:
+  %Equal.sym(Maybe<TxtT>, F.textOf(acc), Laws.Text.make.try.era(F.rev(acc, SNil{})), F.tx(acc)) : {F.obs(u, F.sdone2(_, d)) == F.obsT(F.rev(acc, SNil{}), u, d) : Maybe<V>}
+  F.sdoneObs2(Laws.Text.make.try.era(F.rev(acc, SNil{})), u, d)
+
+def F.dputSt(-pre: String, np: Maybe<&2, U32>, -acc: String, -d: F.K) -> {F.dput(pre, np, acc, d) == F.sst(DN{}, np, F.rev(pre, acc), d) : F.S}:
+  match np:
+    case None{}:
+      {==}
+    case Some{h}:
+      {==}
+
+# str_scan and dec on one character.
+def F.ssN.u(+c: Char, +t: String, +k1: {Char.is_eq('"', c) == False{} : Bool}, +k2: {Char.is_eq('\\', c) == False{} : Bool}, +k3: {isunesc(c) == True{} : Bool}) -> {str_scan(SCon{c, t}, SN{}) == prepM(c, str_scan(t, SN{})) : Maybe<&2, SP>}:
+  Equal.trans(Maybe<&2, SP>, str_scan(SCon{c, t}, SN{}), sel(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{})), prepM(c, str_scan(t, SN{})),
+    selF(Maybe<&2, SP>, Char.is_eq('"', c), u => Some{SP{SNil{}, t}}, u => sel(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{})), k1),
+    Equal.trans(Maybe<&2, SP>, sel(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{})), sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{}), prepM(c, str_scan(t, SN{})),
+      selF(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{}), k2),
+      selT(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{}, k3)))
+
+def F.ssN.b(+c: Char, +t: String, +k1: {Char.is_eq('"', c) == False{} : Bool}, +k2: {Char.is_eq('\\', c) == False{} : Bool}, +k3: {isunesc(c) == False{} : Bool}) -> {str_scan(SCon{c, t}, SN{}) == None{} : Maybe<&2, SP>}:
+  Equal.trans(Maybe<&2, SP>, str_scan(SCon{c, t}, SN{}), sel(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{})), None{},
+    selF(Maybe<&2, SP>, Char.is_eq('"', c), u => Some{SP{SNil{}, t}}, u => sel(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{})), k1),
+    Equal.trans(Maybe<&2, SP>, sel(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{})), sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{}), None{},
+      selF(Maybe<&2, SP>, Char.is_eq('\\', c), u => prepM(c, str_scan(t, SE{})), u => sel(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{}), k2),
+      selF(Maybe<&2, SP>, isunesc(c), u => prepM(c, str_scan(t, SN{})), u => None{}, k3)))
+
+def F.ssE.s(+c: Char, +t: String, +k: {issimple(c) == True{} : Bool}) -> {str_scan(SCon{c, t}, SE{}) == prepM(c, str_scan(t, SN{})) : Maybe<&2, SP>}:
+  selT(Maybe<&2, SP>, issimple(c), u => prepM(c, str_scan(t, SN{})), u => sel(Maybe<&2, SP>, Char.is_eq('u', c), u => prepM(c, str_scan(t, SH{3n})), u => None{}), k)
+
+def F.ssE.n(+c: Char, +t: String, +k: {issimple(c) == False{} : Bool}, +k2: {Char.is_eq('u', c) == False{} : Bool}) -> {str_scan(SCon{c, t}, SE{}) == None{} : Maybe<&2, SP>}:
+  Equal.trans(Maybe<&2, SP>, str_scan(SCon{c, t}, SE{}), sel(Maybe<&2, SP>, Char.is_eq('u', c), u => prepM(c, str_scan(t, SH{3n})), u => None{}), None{},
+    selF(Maybe<&2, SP>, issimple(c), u => prepM(c, str_scan(t, SN{})), u => sel(Maybe<&2, SP>, Char.is_eq('u', c), u => prepM(c, str_scan(t, SH{3n})), u => None{}), k),
+    selF(Maybe<&2, SP>, Char.is_eq('u', c), u => prepM(c, str_scan(t, SH{3n})), u => None{}, k2))
+
+def F.ssH(+c: Char, +t: String, +n: Nat, +k: {ishex(c) == True{} : Bool}) -> {str_scan(SCon{c, t}, SH{n}) == prepM(c, str_scan(t, hnext(n))) : Maybe<&2, SP>}:
+  selT(Maybe<&2, SP>, ishex(c), u => prepM(c, str_scan(t, hnext(n))), u => None{}, k)
+
+def F.ssH.n(+c: Char, +t: String, +n: Nat, +k: {ishex(c) == False{} : Bool}) -> {str_scan(SCon{c, t}, SH{n}) == None{} : Maybe<&2, SP>}:
+  selF(Maybe<&2, SP>, ishex(c), u => prepM(c, str_scan(t, hnext(n))), u => None{}, k)
+
+def F.decN.u(+c: Char, +a: String, +p: Maybe<&2, U32>, +k: {Char.is_eq(c, '\\') == False{} : Bool}) -> {dec(SCon{c, a}, DN{}, p) == emit(p, SCon{c, dec(a, DN{}, None{})}) : String}:
+  selF(String, Char.is_eq(c, '\\'), u => dec(a, DE{}, p), u => emit(p, SCon{c, dec(a, DN{}, None{})}), k)
+
+def F.decE.s(+c: Char, +a: String, +p: Maybe<&2, U32>, +k: {issimple(c) == True{} : Bool}) -> {dec(SCon{c, a}, DE{}, p) == emit(p, SCon{esc(c), dec(a, DN{}, None{})}) : String}:
+  selT(String, issimple(c), u => emit(p, SCon{esc(c), dec(a, DN{}, None{})}), u => sel(String, Char.is_eq(c, 'u'), u => dec(a, DU{SNil{}}, p), u => emit(p, SCon{'\\', SCon{c, dec(a, DN{}, None{})}})), k)
+
+def F.decU.t(+x1: Char, +x2: Char, +x3: Char, +c: Char, +a: String, +p: Maybe<&2, U32>, +k: {F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}) == True{} : Bool})
+  -> {dec(SCon{c, a}, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p) == String.append(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))) : String}:
+  selT(String, F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}}), k)
+
+def F.decU.f(+x1: Char, +x2: Char, +x3: Char, +c: Char, +a: String, +p: Maybe<&2, U32>, +k: {F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}) == False{} : Bool})
+  -> {dec(SCon{c, a}, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p) == emit(p, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}}) : String}:
+  selF(String, F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}}), k)
+
+# The class of a string's character, from the predicates str_scan tests.
+def F.sclsX(+c: Char, +k1: {Char.is_eq('"', c) == False{} : Bool}, +k2: {Char.is_eq('\\', c) == False{} : Bool}, +k3: {isunesc(c) == True{} : Bool}) -> {F.scls(c) == CX{} : F.CC}:
+  %Equal.sym(Bool, Char.is_eq('"', c), False{}, k1) : {F.sc1(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('\\', c), False{}, k2) : {F.sc2(_, c) == CX{} : F.CC}
+  %Equal.sym(Bool, isunesc(c), True{}, k3) : {F.sc3(_) == CX{} : F.CC}
+  {==}
+
+def F.sclsB(+c: Char, +k1: {Char.is_eq('"', c) == False{} : Bool}, +k2: {Char.is_eq('\\', c) == False{} : Bool}, +k3: {isunesc(c) == False{} : Bool}) -> {F.scls(c) == CBad{} : F.CC}:
+  %Equal.sym(Bool, Char.is_eq('"', c), False{}, k1) : {F.sc1(_, c) == CBad{} : F.CC}
+  %Equal.sym(Bool, Char.is_eq('\\', c), False{}, k2) : {F.sc2(_, c) == CBad{} : F.CC}
+  %Equal.sym(Bool, isunesc(c), False{}, k3) : {F.sc3(_) == CBad{} : F.CC}
+  {==}
+
+# The string lemma
+# =================
+
+def F.IHS(t2: String) -> Type:
+  @desc2:DS -> @p2:Maybe<&2, U32> -> @acc2:String -> @-d2:F.K -> {F.dsOk(desc2) == True{} : Bool} -> {F.obs(t2, F.sst(desc2, p2, acc2, d2)) == F.RS(str_scan(t2, F.sscan(desc2)), acc2, desc2, p2, d2) : Maybe<V>}
+
+# The step in a string, for each thing dec may have read.
+def F.dnStep(p: Maybe<&2, U32>, cc: F.CC, +c: Char, acc: String, d: F.K) -> F.S:
+  match cc:
+    case CQ{}:
+      F.sdone(F.emitA(p, acc), d)
+    case CB{}:
+      F.sst(DE{}, p, acc, d)
+    case CX{}:
+      ZS{SCon{c, F.emitA(p, acc)}, d}
+    case _:
+      ZX{}
+
+def F.sStep(desc: DS, p: Maybe<&2, U32>, +c: Char, acc: String, d: F.K) -> F.S:
+  match desc:
+    case DN{}:
+      F.dnStep(p, F.scls(c), c, acc, d)
+    case DE{}:
+      F.sesc(c, p, acc, d)
+    case DU{ds}:
+      F.uhex(ishex(c), ds, c, p, acc, d)
+
+def F.dn0(cc: F.CC, +c: Char, -acc: String, -d: F.K) -> {F.step(ZC{ZS{acc, d}, cc, c}) == F.dnStep(None{}, cc, c, acc, d) : F.S}:
+  match cc:
+    case CQ{}:
+      {==}
+    case CB{}:
+      {==}
+    case CW{}:
+      {==}
+    case CComma{}:
+      {==}
+    case CColon{}:
+      {==}
+    case CRA{}:
+      {==}
+    case CRO{}:
+      {==}
+    case CZ{}:
+      {==}
+    case CD{}:
+      {==}
+    case CDot{}:
+      {==}
+    case CE{}:
+      {==}
+    case CP{}:
+      {==}
+    case CM{}:
+      {==}
+    case CX{}:
+      {==}
+    case CBad{}:
+      {==}
+
+def F.dn1(cc: F.CC, +c: Char, -acc: String, -hi: U32, -d: F.K) -> {F.step(ZC{ZQ{acc, hi, d}, cc, c}) == F.dnStep(Some{hi}, cc, c, acc, d) : F.S}:
+  match cc:
+    case CQ{}:
+      {==}
+    case CB{}:
+      {==}
+    case CW{}:
+      {==}
+    case CComma{}:
+      {==}
+    case CColon{}:
+      {==}
+    case CRA{}:
+      {==}
+    case CRO{}:
+      {==}
+    case CZ{}:
+      {==}
+    case CD{}:
+      {==}
+    case CDot{}:
+      {==}
+    case CE{}:
+      {==}
+    case CP{}:
+      {==}
+    case CM{}:
+      {==}
+    case CX{}:
+      {==}
+    case CBad{}:
+      {==}
+
+def F.sstStep(desc: DS, p: Maybe<&2, U32>, +c: Char, -acc: String, -d: F.K) -> {F.step(F.ccls(F.sst(desc, p, acc, d), c)) == F.sStep(desc, p, c, acc, d) : F.S}:
+  match desc:
+    case DN{}:
+      match p:
+        case None{}:
+          F.dn0(F.scls(c), c, acc, d)
+        case Some{h}:
+          F.dn1(F.scls(c), c, acc, h, d)
+    case DE{}:
+      match p:
+        case None{}:
+          {==}
+        case Some{h}:
+          {==}
+    case DU{ds}:
+      match p:
+        case None{}:
+          {==}
+        case Some{h}:
+          {==}
+
+def F.ssim0(desc: DS, p: Maybe<&2, U32>, -acc: String, -d: F.K) -> {F.obs(SNil{}, F.sst(desc, p, acc, d)) == None{} : Maybe<V>}:
+  match desc:
+    case DN{}:
+      match p:
+        case None{}:
+          {==}
+        case Some{h}:
+          {==}
+    case DE{}:
+      match p:
+        case None{}:
+          {==}
+        case Some{h}:
+          {==}
+    case DU{ds}:
+      match p:
+        case None{}:
+          {==}
+        case Some{h}:
+          {==}
+
+# Inside a string, after nothing pending but p.
+def F.ss.dn.c(+p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, ih: F.IHS(t2), +k1: {Char.is_eq('"', c) == False{} : Bool}, +k2: {Char.is_eq('\\', c) == False{} : Bool}, b: Bool, +e: {isunesc(c) == b : Bool})
+  -> {F.obs(t2, F.dnStep(p, F.scls(c), c, acc, d)) == F.RS(str_scan(SCon{c, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}:
+  match b:
+    case True{}:
+      %Equal.sym(F.CC, F.scls(c), CX{}, F.sclsX(c, k1, k2, e)) : {F.obs(t2, F.dnStep(p, _, c, acc, d)) == F.RS(str_scan(SCon{c, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}
+      %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SN{}), prepM(c, str_scan(t2, SN{})), F.ssN.u(c, t2, k1, k2, e)) : {F.obs(t2, ZS{SCon{c, F.emitA(p, acc)}, d}) == F.RS(_, acc, DN{}, p, d) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t2, ZS{SCon{c, F.emitA(p, acc)}, d}), F.RS(str_scan(t2, SN{}), SCon{c, F.emitA(p, acc)}, DN{}, None{}, d), F.RS(prepM(c, str_scan(t2, SN{})), acc, DN{}, p, d),
+        ih(DN{}, None{}, SCon{c, F.emitA(p, acc)}, d, {==}),
+        Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SN{})), acc, DN{}, p, d), F.RS(str_scan(t2, SN{}), SCon{c, F.emitA(p, acc)}, DN{}, None{}, d),
+          F.RS.prep(c, str_scan(t2, SN{}), acc, DN{}, p, SCon{c, F.emitA(p, acc)}, DN{}, None{}, d,
+            a => Equal.trans(String, F.rev(acc, dec(SCon{c, a}, DN{}, p)), F.rev(acc, emit(p, SCon{c, dec(a, DN{}, None{})})), F.rev(SCon{c, F.emitA(p, acc)}, dec(a, DN{}, None{})),
+              Equal.cong(String, String, x => F.rev(acc, x), dec(SCon{c, a}, DN{}, p), emit(p, SCon{c, dec(a, DN{}, None{})}), F.decN.u(c, a, p, F.symF('\\', c, {==}, k2))),
+              F.emitRev(p, acc, SCon{c, dec(a, DN{}, None{})})))))
+    case False{}:
+      %Equal.sym(F.CC, F.scls(c), CBad{}, F.sclsB(c, k1, k2, e)) : {F.obs(t2, F.dnStep(p, _, c, acc, d)) == F.RS(str_scan(SCon{c, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}
+      %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SN{}), None{}, F.ssN.b(c, t2, k1, k2, e)) : {F.obs(t2, ZX{}) == F.RS(_, acc, DN{}, p, d) : Maybe<V>}
+      F.runX.obs(t2)
+
+def F.ss.dn.b(+p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, ih: F.IHS(t2), +k1: {Char.is_eq('"', c) == False{} : Bool}, b: Bool, +e: {Char.is_eq('\\', c) == b : Bool})
+  -> {F.obs(t2, F.dnStep(p, F.scls(c), c, acc, d)) == F.RS(str_scan(SCon{c, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq('\\', c, e) : {F.obs(t2, F.dnStep(p, F.scls(_), _, acc, d)) == F.RS(str_scan(SCon{_, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t2, F.sst(DE{}, p, acc, d)), F.RS(str_scan(t2, SE{}), acc, DE{}, p, d), F.RS(prepM('\\', str_scan(t2, SE{})), acc, DN{}, p, d),
+        ih(DE{}, p, acc, d, {==}),
+        Equal.sym(Maybe<V>, F.RS(prepM('\\', str_scan(t2, SE{})), acc, DN{}, p, d), F.RS(str_scan(t2, SE{}), acc, DE{}, p, d), F.RS.prep('\\', str_scan(t2, SE{}), acc, DN{}, p, acc, DE{}, p, d, a => {==})))
+    case False{}:
+      F.ss.dn.c(p, c, t2, acc, d, ih, k1, e, isunesc(c), {==})
+
+def F.ss.dn.a(+p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, ih: F.IHS(t2), b: Bool, +e: {Char.is_eq('"', c) == b : Bool})
+  -> {F.obs(t2, F.dnStep(p, F.scls(c), c, acc, d)) == F.RS(str_scan(SCon{c, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq('"', c, e) : {F.obs(t2, F.dnStep(p, F.scls(_), _, acc, d)) == F.RS(str_scan(SCon{_, t2}, SN{}), acc, DN{}, p, d) : Maybe<V>}
+      %Equal.sym(String, F.rev(acc, emit(p, SNil{})), F.rev(F.emitA(p, acc), SNil{}), F.emitRev(p, acc, SNil{})) : {F.obs(t2, F.sdone(F.emitA(p, acc), d)) == F.obsT(_, t2, d) : Maybe<V>}
+      F.sdoneObs(F.emitA(p, acc), t2, d)
+    case False{}:
+      F.ss.dn.b(p, c, t2, acc, d, ih, e, Char.is_eq('\\', c), {==})
+
+# After a backslash.
+def F.ss.de.b(+p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, ih: F.IHS(t2), +k: {issimple(c) == False{} : Bool}, b: Bool, +e: {Char.is_eq('u', c) == b : Bool})
+  -> {F.obs(t2, F.sesc(c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SE{}), acc, DE{}, p, d) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq('u', c, e) : {F.obs(t2, F.sesc(_, p, acc, d)) == F.RS(str_scan(SCon{_, t2}, SE{}), acc, DE{}, p, d) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t2, F.sst(DU{SNil{}}, p, acc, d)), F.RS(str_scan(t2, SH{3n}), acc, DU{SNil{}}, p, d), F.RS(prepM('u', str_scan(t2, SH{3n})), acc, DE{}, p, d),
+        ih(DU{SNil{}}, p, acc, d, {==}),
+        Equal.sym(Maybe<V>, F.RS(prepM('u', str_scan(t2, SH{3n})), acc, DE{}, p, d), F.RS(str_scan(t2, SH{3n}), acc, DU{SNil{}}, p, d), F.RS.prep('u', str_scan(t2, SH{3n}), acc, DE{}, p, acc, DU{SNil{}}, p, d, a => {==})))
+    case False{}:
+      %Equal.sym(Bool, issimple(c), False{}, k) : {F.obs(t2, F.sesc1(_, c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SE{}), acc, DE{}, p, d) : Maybe<V>}
+      %Equal.sym(Bool, Char.is_eq(c, 'u'), False{}, F.symF('u', c, {==}, e)) : {F.obs(t2, F.sesc2(_, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SE{}), acc, DE{}, p, d) : Maybe<V>}
+      %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SE{}), None{}, F.ssE.n(c, t2, k, e)) : {F.obs(t2, ZX{}) == F.RS(_, acc, DE{}, p, d) : Maybe<V>}
+      F.runX.obs(t2)
+
+def F.ss.de.a(+p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, ih: F.IHS(t2), b: Bool, +e: {issimple(c) == b : Bool})
+  -> {F.obs(t2, F.sesc(c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SE{}), acc, DE{}, p, d) : Maybe<V>}:
+  match b:
+    case True{}:
+      %Equal.sym(Bool, issimple(c), True{}, e) : {F.obs(t2, F.sesc1(_, c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SE{}), acc, DE{}, p, d) : Maybe<V>}
+      %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SE{}), prepM(c, str_scan(t2, SN{})), F.ssE.s(c, t2, e)) : {F.obs(t2, ZS{SCon{esc(c), F.emitA(p, acc)}, d}) == F.RS(_, acc, DE{}, p, d) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t2, ZS{SCon{esc(c), F.emitA(p, acc)}, d}), F.RS(str_scan(t2, SN{}), SCon{esc(c), F.emitA(p, acc)}, DN{}, None{}, d), F.RS(prepM(c, str_scan(t2, SN{})), acc, DE{}, p, d),
+        ih(DN{}, None{}, SCon{esc(c), F.emitA(p, acc)}, d, {==}),
+        Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SN{})), acc, DE{}, p, d), F.RS(str_scan(t2, SN{}), SCon{esc(c), F.emitA(p, acc)}, DN{}, None{}, d),
+          F.RS.prep(c, str_scan(t2, SN{}), acc, DE{}, p, SCon{esc(c), F.emitA(p, acc)}, DN{}, None{}, d,
+            a => Equal.trans(String, F.rev(acc, dec(SCon{c, a}, DE{}, p)), F.rev(acc, emit(p, SCon{esc(c), dec(a, DN{}, None{})})), F.rev(SCon{esc(c), F.emitA(p, acc)}, dec(a, DN{}, None{})),
+              Equal.cong(String, String, x => F.rev(acc, x), dec(SCon{c, a}, DE{}, p), emit(p, SCon{esc(c), dec(a, DN{}, None{})}), F.decE.s(c, a, p, e)),
+              F.emitRev(p, acc, SCon{esc(c), dec(a, DN{}, None{})})))))
+    case False{}:
+      F.ss.de.b(p, c, t2, acc, d, ih, e, Char.is_eq('u', c), {==})
+
+# The fourth digit of a \u.
+def F.ss.du4(+x1: Char, +x2: Char, +x3: Char, +p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, ih: F.IHS(t2), b: Bool, +e: {F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}) == b : Bool})
+  -> {F.obs(t2, F.ufin(b, x1, x2, x3, c, p, acc, d)) == F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d) : Maybe<V>}:
+  match b:
+    case True{}:
+      %Equal.sym(F.S, F.dputF(F.hex4(x1, x2, x3, c), p, acc, d), F.dputV(F.hex4(x1, x2, x3, c), p, acc, d), F.dputFEq(F.hex4(x1, x2, x3, c), p, acc, d)) : {F.obs(t2, _) == F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d) : Maybe<V>}
+      %Equal.sym(U32, F.hex4(x1, x2, x3, c), hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), F.hex4H(x1, x2, x3, c, Equal.trans(Bool, F.h4(x1, x2, x3, c), F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}), True{}, Equal.sym(Bool, F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}), F.h4(x1, x2, x3, c), F.h4Eq(x1, x2, x3, c)), e))) : {F.obs(t2, F.dputV(_, p, acc, d)) == F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d) : Maybe<V>}
+      %Equal.sym(F.S, F.dput(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc, d), F.sst(DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), d), F.dputSt(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc, d)) : {F.obs(t2, _) == F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t2, F.sst(DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), d)),
+        F.RS(str_scan(t2, SN{}), F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), d),
+        F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d),
+        ih(DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), d, {==}),
+        Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d), F.RS(str_scan(t2, SN{}), F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), d),
+          F.RS.prep(c, str_scan(t2, SN{}), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), d,
+            a => Equal.trans(String, F.rev(acc, dec(SCon{c, a}, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p)), F.rev(acc, String.append(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p)))), F.rev(F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))),
+              Equal.cong(String, String, x => F.rev(acc, x), dec(SCon{c, a}, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p), String.append(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))), F.decU.t(x1, x2, x3, c, a, p, e)),
+              Equal.sym(String, F.rev(F.rev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))), F.rev(acc, String.append(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p)))),
+                F.revrev(pre(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p), acc, dec(a, DN{}, np(hexv(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, 0), p))))))))
+    case False{}:
+      Equal.trans(Maybe<V>, F.obs(t2, ZS{F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), d}),
+        F.RS(str_scan(t2, SN{}), F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), DN{}, None{}, d),
+        F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d),
+        ih(DN{}, None{}, F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), d, {==}),
+        Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SN{})), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d), F.RS(str_scan(t2, SN{}), F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), DN{}, None{}, d),
+          F.RS.prep(c, str_scan(t2, SN{}), acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), DN{}, None{}, d,
+            a => Equal.trans(String, F.rev(acc, dec(SCon{c, a}, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p)), F.rev(acc, emit(p, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}})), F.rev(F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), dec(a, DN{}, None{})),
+              Equal.cong(String, String, x => F.rev(acc, x), dec(SCon{c, a}, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p), emit(p, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}}), F.decU.f(x1, x2, x3, c, a, p, e)),
+              Equal.trans(String, F.rev(acc, emit(p, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}})), F.rev(F.emitA(p, acc), SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}}), F.rev(F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), dec(a, DN{}, None{})),
+                F.emitRev(p, acc, SCon{'\\', SCon{'u', String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))}}),
+                Equal.sym(String, F.rev(F.rev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}), dec(a, DN{}, None{})), F.rev(SCon{'u', SCon{'\\', F.emitA(p, acc)}}, String.append(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, dec(a, DN{}, None{}))),
+                  F.revrev(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}, SCon{'u', SCon{'\\', F.emitA(p, acc)}}, dec(a, DN{}, None{}))))))))
+
+# In a \u.
+def F.ss.du.t(ds: String, +p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, +hv: {F.dsOk(DU{ds}) == True{} : Bool}, ih: F.IHS(t2), +e: {ishex(c) == True{} : Bool})
+  -> {F.obs(t2, F.udig(ds, c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SH{F.shn(ds)}), acc, DU{ds}, p, d) : Maybe<V>}:
+  match ds:
+    case SNil{}:
+      %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SH{F.shn(SNil{})}), prepM(c, str_scan(t2, hnext(F.shn(SNil{})))), F.ssH(c, t2, F.shn(SNil{}), e)) : {F.obs(t2, F.udig(SNil{}, c, p, acc, d)) == F.RS(_, acc, DU{SNil{}}, p, d) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t2, F.sst(DU{SCon{c, SNil{}}}, p, acc, d)), F.RS(str_scan(t2, SH{2n}), acc, DU{SCon{c, SNil{}}}, p, d), F.RS(prepM(c, str_scan(t2, SH{2n})), acc, DU{SNil{}}, p, d),
+        ih(DU{SCon{c, SNil{}}}, p, acc, d, e),
+        Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SH{2n})), acc, DU{SNil{}}, p, d), F.RS(str_scan(t2, SH{2n}), acc, DU{SCon{c, SNil{}}}, p, d), F.RS.prep(c, str_scan(t2, SH{2n}), acc, DU{SNil{}}, p, acc, DU{SCon{c, SNil{}}}, p, d, a => {==})))
+    case SCon{+x1, r}:
+      match r:
+        case SNil{}:
+          %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SH{F.shn(SCon{x1, SNil{}})}), prepM(c, str_scan(t2, hnext(F.shn(SCon{x1, SNil{}})))), F.ssH(c, t2, F.shn(SCon{x1, SNil{}}), e)) : {F.obs(t2, F.udig(SCon{x1, SNil{}}, c, p, acc, d)) == F.RS(_, acc, DU{SCon{x1, SNil{}}}, p, d) : Maybe<V>}
+          Equal.trans(Maybe<V>, F.obs(t2, F.sst(DU{SCon{x1, SCon{c, SNil{}}}}, p, acc, d)), F.RS(str_scan(t2, SH{1n}), acc, DU{SCon{x1, SCon{c, SNil{}}}}, p, d), F.RS(prepM(c, str_scan(t2, SH{1n})), acc, DU{SCon{x1, SNil{}}}, p, d),
+            ih(DU{SCon{x1, SCon{c, SNil{}}}}, p, acc, d, F.and2(ishex(x1), ishex(c), hv, e)),
+            Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SH{1n})), acc, DU{SCon{x1, SNil{}}}, p, d), F.RS(str_scan(t2, SH{1n}), acc, DU{SCon{x1, SCon{c, SNil{}}}}, p, d), F.RS.prep(c, str_scan(t2, SH{1n}), acc, DU{SCon{x1, SNil{}}}, p, acc, DU{SCon{x1, SCon{c, SNil{}}}}, p, d, a => {==})))
+        case SCon{+x2, r2}:
+          match r2:
+            case SNil{}:
+              %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SH{F.shn(SCon{x1, SCon{x2, SNil{}}})}), prepM(c, str_scan(t2, hnext(F.shn(SCon{x1, SCon{x2, SNil{}}})))), F.ssH(c, t2, F.shn(SCon{x1, SCon{x2, SNil{}}}), e)) : {F.obs(t2, F.udig(SCon{x1, SCon{x2, SNil{}}}, c, p, acc, d)) == F.RS(_, acc, DU{SCon{x1, SCon{x2, SNil{}}}}, p, d) : Maybe<V>}
+              Equal.trans(Maybe<V>, F.obs(t2, F.sst(DU{SCon{x1, SCon{x2, SCon{c, SNil{}}}}}, p, acc, d)), F.RS(str_scan(t2, SH{0n}), acc, DU{SCon{x1, SCon{x2, SCon{c, SNil{}}}}}, p, d), F.RS(prepM(c, str_scan(t2, SH{0n})), acc, DU{SCon{x1, SCon{x2, SNil{}}}}, p, d),
+                ih(DU{SCon{x1, SCon{x2, SCon{c, SNil{}}}}}, p, acc, d, F.and2(ishex(x1), Bool.and(ishex(x2), ishex(c)), F.andL(ishex(x1), ishex(x2), hv), F.and2(ishex(x2), ishex(c), F.andR(ishex(x1), ishex(x2), hv), e))),
+                Equal.sym(Maybe<V>, F.RS(prepM(c, str_scan(t2, SH{0n})), acc, DU{SCon{x1, SCon{x2, SNil{}}}}, p, d), F.RS(str_scan(t2, SH{0n}), acc, DU{SCon{x1, SCon{x2, SCon{c, SNil{}}}}}, p, d), F.RS.prep(c, str_scan(t2, SH{0n}), acc, DU{SCon{x1, SCon{x2, SNil{}}}}, p, acc, DU{SCon{x1, SCon{x2, SCon{c, SNil{}}}}}, p, d, a => {==})))
+            case SCon{+x3, r3}:
+              match r3:
+                case SNil{}:
+                  %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SH{F.shn(SCon{x1, SCon{x2, SCon{x3, SNil{}}}})}), prepM(c, str_scan(t2, hnext(F.shn(SCon{x1, SCon{x2, SCon{x3, SNil{}}}})))), F.ssH(c, t2, F.shn(SCon{x1, SCon{x2, SCon{x3, SNil{}}}}), e)) : {F.obs(t2, F.udig(SCon{x1, SCon{x2, SCon{x3, SNil{}}}}, c, p, acc, d)) == F.RS(_, acc, DU{SCon{x1, SCon{x2, SCon{x3, SNil{}}}}}, p, d) : Maybe<V>}
+                  F.ss.du4(x1, x2, x3, p, c, t2, acc, d, ih, True{}, Equal.trans(Bool, F.ishexS(SCon{x1, SCon{x2, SCon{x3, SCon{c, SNil{}}}}}), F.h4(x1, x2, x3, c), True{}, F.h4Eq(x1, x2, x3, c), F.and2(F.hx(x1), Bool.and(F.hx(x2), Bool.and(F.hx(x3), F.hx(c))), F.hxI(x1, F.andL(ishex(x1), Bool.and(ishex(x2), ishex(x3)), hv)), F.and2(F.hx(x2), Bool.and(F.hx(x3), F.hx(c)), F.hxI(x2, F.andL(ishex(x2), ishex(x3), F.andR(ishex(x1), Bool.and(ishex(x2), ishex(x3)), hv))), F.and2(F.hx(x3), F.hx(c), F.hxI(x3, F.andR(ishex(x2), ishex(x3), F.andR(ishex(x1), Bool.and(ishex(x2), ishex(x3)), hv))), F.hxI(c, e))))))
+                case SCon{x4, r4}:
+                  Empty.absurd({F.obs(t2, F.udig(SCon{x1, SCon{x2, SCon{x3, SCon{x4, r4}}}}, c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SH{F.shn(SCon{x1, SCon{x2, SCon{x3, SCon{x4, r4}}}})}), acc, DU{SCon{x1, SCon{x2, SCon{x3, SCon{x4, r4}}}}}, p, d) : Maybe<V>}, false_ne_true(hv))
+
+def F.ss.du.a(ds: String, +p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, +hv: {F.dsOk(DU{ds}) == True{} : Bool}, ih: F.IHS(t2), b: Bool, +e: {ishex(c) == b : Bool})
+  -> {F.obs(t2, F.uhex(b, ds, c, p, acc, d)) == F.RS(str_scan(SCon{c, t2}, SH{F.shn(ds)}), acc, DU{ds}, p, d) : Maybe<V>}:
+  match b:
+    case False{}:
+      %Equal.sym(Maybe<&2, SP>, str_scan(SCon{c, t2}, SH{F.shn(ds)}), None{}, F.ssH.n(c, t2, F.shn(ds), e)) : {F.obs(t2, ZX{}) == F.RS(_, acc, DU{ds}, p, d) : Maybe<V>}
+      F.runX.obs(t2)
+    case True{}:
+      F.ss.du.t(ds, p, c, t2, acc, d, hv, ih, e)
+
+def F.ssim.c(desc: DS, +p: Maybe<&2, U32>, +c: Char, +t2: String, +acc: String, -d: F.K, +hv: {F.dsOk(desc) == True{} : Bool}, ih: F.IHS(t2))
+  -> {F.obs(t2, F.sStep(desc, p, c, acc, d)) == F.RS(str_scan(SCon{c, t2}, F.sscan(desc)), acc, desc, p, d) : Maybe<V>}:
+  match desc:
+    case DN{}:
+      F.ss.dn.a(p, c, t2, acc, d, ih, Char.is_eq('"', c), {==})
+    case DE{}:
+      F.ss.de.a(p, c, t2, acc, d, ih, issimple(c), {==})
+    case DU{ds}:
+      F.ss.du.a(ds, p, c, t2, acc, d, hv, ih, ishex(c), {==})
+
+# A string in the machine reads as str_scan, then dec.
+def F.ssim(t: String, +desc: DS, +p: Maybe<&2, U32>, +acc: String, -d: F.K, +hv: {F.dsOk(desc) == True{} : Bool}) -> {F.obs(t, F.sst(desc, p, acc, d)) == F.RS(str_scan(t, F.sscan(desc)), acc, desc, p, d) : Maybe<V>}:
+  match t:
+    case SNil{}:
+      F.ssim0(desc, p, acc, d)
+    case SCon{+c, +t2}:
+      %Equal.sym(F.S, F.step(F.ccls(F.sst(desc, p, acc, d), c)), F.sStep(desc, p, c, acc, d), F.sstStep(desc, p, c, acc, d)) : {F.obs(t2, _) == F.RS(str_scan(SCon{c, t2}, F.sscan(desc)), acc, desc, p, d) : Maybe<V>}
+      F.ssim.c(desc, p, c, t2, acc, d, hv, ds2 => p2 => a2 => d2 => h2 => F.ssim(t2, ds2, p2, a2, d2, h2))
+
+# The reference parser's results, as the machine answers them
+# ============================================================
+
+def F.RV(m: Maybe<&2, PR>, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{p}:
+      match p:
+        case PR{r, u}:
+          F.obsV(rvM(r), u, k)
+
+# Classes that end a state.
+def F.a0X(+x: Char, -k: F.K, +hw: {isws(x) == False{} : Bool}, +hb: {Char.is_eq(']', x) == False{} : Bool}) -> {F.step(ZC{ZA0{k}, F.gcls(x), x}) == F.vstart(x, KA{[], k}) : F.S}:
+  F.gcase(cc => {F.step(ZC{ZA0{k}, cc, x}) == F.vstart(x, KA{[], k}) : F.S}, x, hw, h1 => {==}, h1 => h2 => {==},
+    h1 => h2 => h3 => Empty.absurd({F.step(ZC{ZA0{k}, CRA{}, x}) == F.vstart(x, KA{[], k}) : F.S}, contra(Char.is_eq(']', x), h3, hb)),
+    h1 => h2 => h3 => h4 => {==}, h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+def F.o0X(+x: Char, -k: F.K, +hw: {isws(x) == False{} : Bool}, +hr: {Char.is_eq('}', x) == False{} : Bool}) -> {F.step(ZC{ZO0{k}, F.gcls(x), x}) == F.step(ZC{ZOK{[], k}, F.gcls(x), x}) : F.S}:
+  F.gcase(cc => {F.step(ZC{ZO0{k}, cc, x}) == F.step(ZC{ZOK{[], k}, cc, x}) : F.S}, x, hw, h1 => {==}, h1 => h2 => {==}, h1 => h2 => h3 => {==},
+    h1 => h2 => h3 => h4 => Empty.absurd({F.step(ZC{ZO0{k}, CRO{}, x}) == F.step(ZC{ZOK{[], k}, CRO{}, x}) : F.S}, contra(Char.is_eq('}', x), h4, hr)),
+    h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+def F.okX(+x: Char, -ms: List<(TxtT & V)>, -k: F.K, +hw: {isws(x) == False{} : Bool}, +hq: {Char.is_eq('"', x) == False{} : Bool}) -> {F.step(ZC{ZOK{ms, k}, F.gcls(x), x}) == ZX{} : F.S}:
+  F.gcase(cc => {F.step(ZC{ZOK{ms, k}, cc, x}) == ZX{} : F.S}, x, hw, h1 => {==}, h1 => h2 => {==}, h1 => h2 => h3 => {==}, h1 => h2 => h3 => h4 => {==},
+    h1 => h2 => h3 => h4 => h5 => Empty.absurd({F.step(ZC{ZOK{ms, k}, CQ{}, x}) == ZX{} : F.S}, contra(Char.is_eq('"', x), h5, hq)),
+    h1 => h2 => h3 => h4 => h5 => {==})
+
+def F.anX(+x: Char, -xs: List<V>, -k: F.K, +hw: {isws(x) == False{} : Bool}, +hb: {Char.is_eq(']', x) == False{} : Bool}, +hc: {Char.is_eq(',', x) == False{} : Bool}) -> {F.step(ZC{ZAN{xs, k}, F.gcls(x), x}) == ZX{} : F.S}:
+  F.gcase(cc => {F.step(ZC{ZAN{xs, k}, cc, x}) == ZX{} : F.S}, x, hw,
+    h1 => Empty.absurd({F.step(ZC{ZAN{xs, k}, CComma{}, x}) == ZX{} : F.S}, contra(Char.is_eq(',', x), h1, hc)),
+    h1 => h2 => {==},
+    h1 => h2 => h3 => Empty.absurd({F.step(ZC{ZAN{xs, k}, CRA{}, x}) == ZX{} : F.S}, contra(Char.is_eq(']', x), h3, hb)),
+    h1 => h2 => h3 => h4 => {==}, h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+def F.onX(+x: Char, -ms: List<(TxtT & V)>, -k: F.K, +hw: {isws(x) == False{} : Bool}, +hr: {Char.is_eq('}', x) == False{} : Bool}, +hc: {Char.is_eq(',', x) == False{} : Bool}) -> {F.step(ZC{ZON{ms, k}, F.gcls(x), x}) == ZX{} : F.S}:
+  F.gcase(cc => {F.step(ZC{ZON{ms, k}, cc, x}) == ZX{} : F.S}, x, hw,
+    h1 => Empty.absurd({F.step(ZC{ZON{ms, k}, CComma{}, x}) == ZX{} : F.S}, contra(Char.is_eq(',', x), h1, hc)),
+    h1 => h2 => {==}, h1 => h2 => h3 => {==},
+    h1 => h2 => h3 => h4 => Empty.absurd({F.step(ZC{ZON{ms, k}, CRO{}, x}) == ZX{} : F.S}, contra(Char.is_eq('}', x), h4, hr)),
+    h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+def F.coX(+x: Char, -key: TxtT, -ms: List<(TxtT & V)>, -k: F.K, +hw: {isws(x) == False{} : Bool}, +hk: {Char.is_eq(':', x) == False{} : Bool}) -> {F.step(ZC{ZCo{key, ms, k}, F.gcls(x), x}) == ZX{} : F.S}:
+  F.gcase(cc => {F.step(ZC{ZCo{key, ms, k}, cc, x}) == ZX{} : F.S}, x, hw, h1 => {==},
+    h1 => h2 => Empty.absurd({F.step(ZC{ZCo{key, ms, k}, CColon{}, x}) == ZX{} : F.S}, contra(Char.is_eq(':', x), h2, hk)),
+    h1 => h2 => h3 => {==}, h1 => h2 => h3 => h4 => {==}, h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+def F.zdX(+x: Char, -v: V, +hw: {isws(x) == False{} : Bool}) -> {F.step(ZC{ZD{v}, F.gcls(x), x}) == ZX{} : F.S}:
+  F.gcase(cc => {F.step(ZC{ZD{v}, cc, x}) == ZX{} : F.S}, x, hw, h1 => {==}, h1 => h2 => {==}, h1 => h2 => h3 => {==}, h1 => h2 => h3 => h4 => {==}, h1 => h2 => h3 => h4 => h5 => {==}, h1 => h2 => h3 => h4 => h5 => {==})
+
+# After the whole value, only whitespace may come.
+def F.wsv(b: Bool, v: V) -> Maybe<V>:
+  match b:
+    case True{}:
+      Some{v}
+    case False{}:
+      None{}
+
+def F.zdObs.t(+c: Char, +u: String, -v: V, +hw: {isws(c) == True{} : Bool}, +ih: {F.obs(u, ZD{v}) == F.wsv(wsall(u), v) : Maybe<V>}) -> {F.obs(SCon{c, u}, ZD{v}) == F.wsv(wsall(SCon{c, u}), v) : Maybe<V>}:
+  %Equal.sym(F.CC, F.gcls(c), CW{}, F.gclsW(c, hw)) : {F.fin(F.run(u, F.step(ZC{ZD{v}, _, c}))) == F.wsv(wsall(SCon{c, u}), v) : Maybe<V>}
+  %Equal.sym(Bool, isws(c), True{}, hw) : {F.obs(u, ZD{v}) == F.wsv(Bool.and(_, wsall(u)), v) : Maybe<V>}
+  ih
+
+def F.zdObs.f(+c: Char, +u: String, -v: V, +hw: {isws(c) == False{} : Bool}) -> {F.obs(SCon{c, u}, ZD{v}) == F.wsv(wsall(SCon{c, u}), v) : Maybe<V>}:
+  %Equal.sym(F.S, F.step(ZC{ZD{v}, F.gcls(c), c}), ZX{}, F.zdX(c, v, hw)) : {F.fin(F.run(u, _)) == F.wsv(wsall(SCon{c, u}), v) : Maybe<V>}
+  %Equal.sym(Bool, isws(c), False{}, hw) : {F.obs(u, ZX{}) == F.wsv(Bool.and(_, wsall(u)), v) : Maybe<V>}
+  F.runX.obs(u)
+
+def F.zdObs(u: String, -v: V) -> {F.obs(u, ZD{v}) == F.wsv(wsall(u), v) : Maybe<V>}:
+  match u:
+    case SNil{}:
+      {==}
+    case SCon{+c, +u2}:
+      bcase({F.obs(SCon{c, u2}, ZD{v}) == F.wsv(wsall(SCon{c, u2}), v) : Maybe<V>}, isws(c), +hw => F.zdObs.t(c, u2, v, hw, F.zdObs(u2, v)), +hw => F.zdObs.f(c, u2, v, hw))
+
+# A number token: the machine reads as numv.
+# Keep make.try.era's argument stuck on a variable: the checker would run the
+# ABNF interpreter on a string that starts with a constructor.
+def F.RV.num0(m: Maybe<&2, SP>, -k: F.K) -> {F.RN(m, SNil{}, k) == F.RV(numv(m), k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case SP{a, u}:
+          {==}
+
+def F.RV.num(+c: Char, +m: Maybe<&2, SP>, -k: F.K) -> {F.RN(m, SCon{c, SNil{}}, k) == F.RV(numv(prepM(c, m)), k) : Maybe<V>}:
+  Equal.trans(Maybe<V>, F.RN(m, SCon{c, SNil{}}, k), F.RN(prepM(c, m), SNil{}, k), F.RV(numv(prepM(c, m)), k), Equal.sym(Maybe<V>, F.RN(prepM(c, m), SNil{}, k), F.RN(m, SCon{c, SNil{}}, k), F.RN.prep(c, m, SNil{}, k)), F.RV.num0(prepM(c, m), k))
+
+def F.vnum.s(q2: F.NQ, +c: Char, +t: String, -k: F.K, kf: F.KF(k), +hq: {F.notQS(q2) == True{} : Bool}) -> {F.obs(t, F.vnum2(q2, c, k)) == F.RV(numv(F.cnext(q2, QS{}, c, t)), k) : Maybe<V>}:
+  match q2:
+    case QX{}:
+      F.runX.obs(t)
+    case QS{}:
+      Empty.absurd({F.obs(t, F.vnum2(QS{}, c, k)) == F.RV(numv(F.cnext(QS{}, QS{}, c, t)), k) : Maybe<V>}, false_ne_true(hq))
+    case QM{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QM{}, k}), F.RN(F.cont(QM{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QM{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QM{}, k, kf, {==}), F.RV.num(c, F.cont(QM{}, t), k))
+    case QZ{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QZ{}, k}), F.RN(F.cont(QZ{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QZ{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QZ{}, k, kf, {==}), F.RV.num(c, F.cont(QZ{}, t), k))
+    case QI{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QI{}, k}), F.RN(F.cont(QI{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QI{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QI{}, k, kf, {==}), F.RV.num(c, F.cont(QI{}, t), k))
+    case QF0{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QF0{}, k}), F.RN(F.cont(QF0{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QF0{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QF0{}, k, kf, {==}), F.RV.num(c, F.cont(QF0{}, t), k))
+    case QF{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QF{}, k}), F.RN(F.cont(QF{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QF{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QF{}, k, kf, {==}), F.RV.num(c, F.cont(QF{}, t), k))
+    case QE0{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QE0{}, k}), F.RN(F.cont(QE0{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QE0{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QE0{}, k, kf, {==}), F.RV.num(c, F.cont(QE0{}, t), k))
+    case QES{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QES{}, k}), F.RN(F.cont(QES{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QES{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QES{}, k, kf, {==}), F.RV.num(c, F.cont(QES{}, t), k))
+    case QE{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZN{SCon{c, SNil{}}, QE{}, k}), F.RN(F.cont(QE{}, t), SCon{c, SNil{}}, k), F.RV(numv(prepM(c, F.cont(QE{}, t))), k), F.nsim(t, SCon{c, SNil{}}, QE{}, k, kf, {==}), F.RV.num(c, F.cont(QE{}, t), k))
+
+# A number starts: the machine reads as numv(num_scan).
+def F.vnum(+c: Char, +t: String, -k: F.K, kf: F.KF(k)) -> {F.obs(t, F.vnum2(F.ndc(QS{}, F.ncls(c)), c, k)) == F.RV(numv(num_scan(SCon{c, t})), k) : Maybe<V>}:
+  %Equal.sym(Maybe<&2, SP>, F.cont(QS{}, SCon{c, t}), F.cnext(F.ndc(QS{}, F.ncls(c)), QS{}, c, t), F.cs(QS{}, c, t)) : {F.obs(t, F.vnum2(F.ndc(QS{}, F.ncls(c)), c, k)) == F.RV(numv(_), k) : Maybe<V>}
+  F.vnum.s(F.ndc(QS{}, F.ncls(c)), c, t, k, kf, F.ndcS(QS{}, F.ncls(c)))
+
+# A literal: the machine reads as lit.
+def F.RV.lit2(b: Bool, +p: String, +t: String, r: Raw, -v: V, -k: F.K, +hv: {rvM(r) == Some{v} : Maybe<V>}) -> {F.RL(b, t, String.length(p), v, k) == F.RV(sel(Maybe<&2, PR>, b, u => Some{PR{r, String.drop(t, String.length(p))}}, u => None{}), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, hv) : {F.obs(String.drop(t, String.length(p)), F.complete(v, k)) == F.obsV(_, String.drop(t, String.length(p)), k) : Maybe<V>}
+      {==}
+    case False{}:
+      {==}
+
+def F.RV.lit(+p: String, +t: String, +r: Raw, -v: V, -k: F.K, +hv: {rvM(r) == Some{v} : Maybe<V>}) -> {F.RL(String.starts_with(t, p), t, String.length(p), v, k) == F.RV(lit(p, t, r), k) : Maybe<V>}:
+  F.RV.lit2(String.starts_with(t, p), p, t, r, v, k, hv)
+
+# A string token: the machine reads as strv(str_scan).
+def F.RV.str2(m: Maybe<TxtT>, +u: String, -k: F.K, f3: @tx:TxtT -> {F.skey(tx, k) == F.complete(VStr{tx}, k) : F.S}) -> {F.obsT2(m, u, k) == F.obsV(strV(m), u, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{tx}:
+      Equal.cong(F.S, Maybe<V>, x => F.obs(u, x), F.skey(tx, k), F.complete(VStr{tx}, k), f3(tx))
+
+def F.RV.str(m: Maybe<&2, SP>, -k: F.K, kf: F.KF(k)) -> {F.RS(m, SNil{}, DN{}, None{}, k) == F.RV(strv(m), k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case SP{a, u}:
+          match kf:
+            case (f1, f2, f3):
+              F.RV.str2(Laws.Text.make.try.era(dec(a, DN{}, None{})), u, k, f3)
+
+# Arrays and objects in the reference results
+# ===========================================
+
+# appA(xs, w) puts xs, last first, before the elements of w; a w that is no
+# array counts as the empty one.
+def F.appA(xs: List<V>, w: V) -> V:
+  match w:
+    case VArr{ys}:
+      VArr{F.revl(V, xs, ys)}
+    case _:
+      VArr{F.revl(V, xs, [])}
+
+def F.appO(ms: List<(TxtT & V)>, w: V) -> V:
+  match w:
+    case VObj{os}:
+      VObj{F.revl((TxtT & V), ms, os)}
+    case _:
+      VObj{F.revl((TxtT & V), ms, [])}
+
+def F.obsA(m: Maybe<V>, xs: List<V>, u: String, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{w}:
+      F.obs(u, F.complete(F.appA(xs, w), k))
+
+def F.obsO(m: Maybe<V>, ms: List<(TxtT & V)>, u: String, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{w}:
+      F.obs(u, F.complete(F.appO(ms, w), k))
+
+# What the machine answers for the rest of an array, read as r: a raw that is
+# no array counts as the empty one.
+def F.RA2(r: Raw, xs: List<V>, u: String, k: F.K) -> Maybe<V>:
+  match r:
+    case RArr{ys}:
+      F.obsA(rvM(RArr{ys}), xs, u, k)
+    case _:
+      F.obs(u, F.complete(F.appA(xs, VArr{[]}), k))
+
+def F.RA(m: Maybe<&2, PR>, xs: List<V>, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{p}:
+      match p:
+        case PR{r, u}:
+          F.RA2(r, xs, u, k)
+
+def F.RO2(r: Raw, ms: List<(TxtT & V)>, u: String, k: F.K) -> Maybe<V>:
+  match r:
+    case RObj{ys}:
+      F.obsO(rvM(RObj{ys}), ms, u, k)
+    case _:
+      F.obs(u, F.complete(F.appO(ms, VObj{[]}), k))
+
+def F.RO(m: Maybe<&2, PR>, ms: List<(TxtT & V)>, k: F.K) -> Maybe<V>:
+  match m:
+    case None{}:
+      None{}
+    case Some{p}:
+      match p:
+        case PR{r, u}:
+          F.RO2(r, ms, u, k)
+
+# One more element, before the rest of an array.
+def F.cA4(w: V, -v: V, -xs: List<V>, -u2: String, -k: F.K) -> {F.obs(u2, F.complete(F.appA(v <> xs, w), k)) == F.obs(u2, F.complete(F.appA(xs, consA(v, w)), k)) : Maybe<V>}:
+  match w:
+    case VNull{}:
+      {==}
+    case VBool{b}:
+      {==}
+    case VNum{n}:
+      {==}
+    case VStr{t}:
+      {==}
+    case VArr{ys}:
+      {==}
+    case VObj{os}:
+      {==}
+
+def F.cA3(m: Maybe<V>, -v: V, -xs: List<V>, -u2: String, -k: F.K) -> {F.obsA(m, v <> xs, u2, k) == F.obsA(consM(Some{v}, m), xs, u2, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{w}:
+      F.cA4(w, v, xs, u2, k)
+
+def F.cA2(+r: Raw, -v: V, +e: {rvM(r) == Some{v} : Maybe<V>}, r2: Raw, -u2: String, -xs: List<V>, -k: F.K) -> {F.RA2(r2, v <> xs, u2, k) == F.RA2(acons1(r, r2), xs, u2, k) : Maybe<V>}:
+  match r2:
+    case RArr{ys}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obsA(rvM(RArr{ys}), v <> xs, u2, k) == F.obsA(consM(_, rvM(RArr{ys})), xs, u2, k) : Maybe<V>}
+      F.cA3(rvM(RArr{ys}), v, xs, u2, k)
+    case RNull{}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appA(v <> xs, VArr{[]}), k)) == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RBool{b}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appA(v <> xs, VArr{[]}), k)) == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RNum{s}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appA(v <> xs, VArr{[]}), k)) == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RStr{s}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appA(v <> xs, VArr{[]}), k)) == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RObj{ms}:
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appA(v <> xs, VArr{[]}), k)) == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+
+def F.cA(+r: Raw, -v: V, +e: {rvM(r) == Some{v} : Maybe<V>}, m2: Maybe<&2, PR>, -xs: List<V>, -k: F.K) -> {F.RA(m2, v <> xs, k) == F.RA(acons(r, m2), xs, k) : Maybe<V>}:
+  match m2:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{r2, u2}:
+          F.cA2(r, v, e, r2, u2, xs, k)
+
+def F.cAN2(+r: Raw, +e: {rvM(r) == None{} : Maybe<V>}, r2: Raw, -u2: String, -xs: List<V>, -k: F.K) -> {None{} == F.RA2(acons1(r, r2), xs, u2, k) : Maybe<V>}:
+  match r2:
+    case RArr{ys}:
+      %Equal.sym(Maybe<V>, rvM(r), None{}, e) : {None{} == F.obsA(consM(_, rvM(RArr{ys})), xs, u2, k) : Maybe<V>}
+      {==}
+    case RNull{}:
+      %Equal.sym(Maybe<V>, rvM(r), None{}, e) : {None{} == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RBool{b}:
+      %Equal.sym(Maybe<V>, rvM(r), None{}, e) : {None{} == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RNum{s}:
+      %Equal.sym(Maybe<V>, rvM(r), None{}, e) : {None{} == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RStr{s}:
+      %Equal.sym(Maybe<V>, rvM(r), None{}, e) : {None{} == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+    case RObj{ms}:
+      %Equal.sym(Maybe<V>, rvM(r), None{}, e) : {None{} == F.obsA(consM(_, Some{VArr{[]}}), xs, u2, k) : Maybe<V>}
+      {==}
+
+def F.cAN(+r: Raw, +e: {rvM(r) == None{} : Maybe<V>}, m2: Maybe<&2, PR>, -xs: List<V>, -k: F.K) -> {None{} == F.RA(acons(r, m2), xs, k) : Maybe<V>}:
+  match m2:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{r2, u2}:
+          F.cAN2(r, e, r2, u2, xs, k)
+
+# A whole array, from its first element on.
+def F.obsA0w(-v: V, w: V, -u: String, -k: F.K) -> {F.obs(u, F.complete(F.appA([], consA(v, w)), k)) == F.obs(u, F.complete(consA(v, w), k)) : Maybe<V>}:
+  match w:
+    case VNull{}:
+      {==}
+    case VBool{b}:
+      {==}
+    case VNum{n}:
+      {==}
+    case VStr{t}:
+      {==}
+    case VArr{ys}:
+      {==}
+    case VObj{os}:
+      {==}
+
+def F.obsA0c(m1: Maybe<V>, m2: Maybe<V>, -u: String, -k: F.K) -> {F.obsA(consM(m1, m2), [], u, k) == F.obsV(consM(m1, m2), u, k) : Maybe<V>}:
+  match m1:
+    case None{}:
+      {==}
+    case Some{v}:
+      match m2:
+        case None{}:
+          {==}
+        case Some{w}:
+          F.obsA0w(v, w, u, k)
+
+def F.RA0a2(+r: Raw, r2: Raw, -u2: String, -k: F.K) -> {F.RA2(acons1(r, r2), [], u2, k) == F.obsV(rvM(acons1(r, r2)), u2, k) : Maybe<V>}:
+  match r2:
+    case RArr{ys}:
+      F.obsA0c(rvM(r), rvM(RArr{ys}), u2, k)
+    case RNull{}:
+      F.obsA0c(rvM(r), Some{VArr{[]}}, u2, k)
+    case RBool{b}:
+      F.obsA0c(rvM(r), Some{VArr{[]}}, u2, k)
+    case RNum{s}:
+      F.obsA0c(rvM(r), Some{VArr{[]}}, u2, k)
+    case RStr{s}:
+      F.obsA0c(rvM(r), Some{VArr{[]}}, u2, k)
+    case RObj{ms}:
+      F.obsA0c(rvM(r), Some{VArr{[]}}, u2, k)
+
+def F.RA0acons(+r: Raw, m2: Maybe<&2, PR>, -k: F.K) -> {F.RA(acons(r, m2), [], k) == F.RV(acons(r, m2), k) : Maybe<V>}:
+  match m2:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{r2, u2}:
+          F.RA0a2(r, r2, u2, k)
+
+def F.arrRV(+g: Nat, m: Maybe<&2, PR>, -k: F.K) -> {F.RA(Maybe.bind(&2, PR, PR, m, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), [], k) == F.RV(Maybe.bind(&2, PR, PR, m, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{+p}:
+      F.RA0acons(prr(p), pv(g, MA{}, skip_ws(prt(p))), k)
+
+# One more member, before the rest of an object.
+def F.cO4(w: V, -tx: TxtT, -v: V, -ms: List<(TxtT & V)>, -u2: String, -k: F.K) -> {F.obs(u2, F.complete(F.appO((tx, v) <> ms, w), k)) == F.obs(u2, F.complete(F.appO(ms, consO((tx, v), w)), k)) : Maybe<V>}:
+  match w:
+    case VNull{}:
+      {==}
+    case VBool{b}:
+      {==}
+    case VNum{n}:
+      {==}
+    case VStr{t}:
+      {==}
+    case VArr{ys}:
+      {==}
+    case VObj{os}:
+      {==}
+
+def F.cO3(m: Maybe<V>, -tx: TxtT, -v: V, -ms: List<(TxtT & V)>, -u2: String, -k: F.K) -> {F.obsO(m, (tx, v) <> ms, u2, k) == F.obsO(memM(Some{tx}, Some{v}, m), ms, u2, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{w}:
+      F.cO4(w, tx, v, ms, u2, k)
+
+def F.cO2(+a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, +r: Raw, -v: V, +e: {rvM(r) == Some{v} : Maybe<V>}, r2: Raw, -u2: String, -ms: List<(TxtT & V)>, -k: F.K) -> {F.RO2(r2, (tx, v) <> ms, u2, k) == F.RO2(ocons1(a, r, r2), ms, u2, k) : Maybe<V>}:
+  match r2:
+    case RObj{ys}:
+      %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {F.obsO(rvM(RObj{ys}), (tx, v) <> ms, u2, k) == F.obsO(memM(_, rvM(r), rvM(RObj{ys})), ms, u2, k) : Maybe<V>}
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obsO(rvM(RObj{ys}), (tx, v) <> ms, u2, k) == F.obsO(memM(Some{tx}, _, rvM(RObj{ys})), ms, u2, k) : Maybe<V>}
+      F.cO3(rvM(RObj{ys}), tx, v, ms, u2, k)
+    case RNull{}:
+      %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(_, rvM(r), Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(Some{tx}, _, Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      {==}
+    case RBool{b}:
+      %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(_, rvM(r), Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(Some{tx}, _, Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      {==}
+    case RNum{s}:
+      %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(_, rvM(r), Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(Some{tx}, _, Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      {==}
+    case RStr{s}:
+      %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(_, rvM(r), Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(Some{tx}, _, Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      {==}
+    case RArr{xs}:
+      %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(_, rvM(r), Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      %Equal.sym(Maybe<V>, rvM(r), Some{v}, e) : {F.obs(u2, F.complete(F.appO((tx, v) <> ms, VObj{[]}), k)) == F.obsO(memM(Some{tx}, _, Some{VObj{[]}}), ms, u2, k) : Maybe<V>}
+      {==}
+
+def F.cO(+a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, +r: Raw, -v: V, +e: {rvM(r) == Some{v} : Maybe<V>}, m2: Maybe<&2, PR>, -ms: List<(TxtT & V)>, -k: F.K) -> {F.RO(m2, (tx, v) <> ms, k) == F.RO(ocons(a, r, m2), ms, k) : Maybe<V>}:
+  match m2:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{r2, u2}:
+          F.cO2(a, tx, et, r, v, e, r2, u2, ms, k)
+
+# A member that fails: its key is no text, or its value fails.
+def F.memNt(+a: String, +r: Raw, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == None{} : Maybe<TxtT>}, z: Maybe<V>) -> {memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), z) == None{} : Maybe<V>}:
+  %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), None{}, et) : {memM(_, rvM(r), z) == None{} : Maybe<V>}
+  {==}
+
+def F.memNv(+a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, +r: Raw, +ev: {rvM(r) == None{} : Maybe<V>}, z: Maybe<V>) -> {memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), z) == None{} : Maybe<V>}:
+  %Equal.sym(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(a)), Some{tx}, et) : {memM(_, rvM(r), z) == None{} : Maybe<V>}
+  %Equal.sym(Maybe<V>, rvM(r), None{}, ev) : {memM(Some{tx}, _, z) == None{} : Maybe<V>}
+  {==}
+
+def F.ocN2(+a: String, +r: Raw, r2: Raw, -u2: String, -ms: List<(TxtT & V)>, -k: F.K, hm: @z:Maybe<V> -> {memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), z) == None{} : Maybe<V>}) -> {None{} == F.RO2(ocons1(a, r, r2), ms, u2, k) : Maybe<V>}:
+  match r2:
+    case RObj{ys}:
+      %Equal.sym(Maybe<V>, memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), rvM(RObj{ys})), None{}, hm(rvM(RObj{ys}))) : {None{} == F.obsO(_, ms, u2, k) : Maybe<V>}
+      {==}
+    case RNull{}:
+      %Equal.sym(Maybe<V>, memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), Some{VObj{[]}}), None{}, hm(Some{VObj{[]}})) : {None{} == F.obsO(_, ms, u2, k) : Maybe<V>}
+      {==}
+    case RBool{b}:
+      %Equal.sym(Maybe<V>, memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), Some{VObj{[]}}), None{}, hm(Some{VObj{[]}})) : {None{} == F.obsO(_, ms, u2, k) : Maybe<V>}
+      {==}
+    case RNum{s}:
+      %Equal.sym(Maybe<V>, memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), Some{VObj{[]}}), None{}, hm(Some{VObj{[]}})) : {None{} == F.obsO(_, ms, u2, k) : Maybe<V>}
+      {==}
+    case RStr{s}:
+      %Equal.sym(Maybe<V>, memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), Some{VObj{[]}}), None{}, hm(Some{VObj{[]}})) : {None{} == F.obsO(_, ms, u2, k) : Maybe<V>}
+      {==}
+    case RArr{xs}:
+      %Equal.sym(Maybe<V>, memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), Some{VObj{[]}}), None{}, hm(Some{VObj{[]}})) : {None{} == F.obsO(_, ms, u2, k) : Maybe<V>}
+      {==}
+
+def F.ocN(+a: String, +r: Raw, m2: Maybe<&2, PR>, -ms: List<(TxtT & V)>, -k: F.K, hm: @z:Maybe<V> -> {memM(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), z) == None{} : Maybe<V>}) -> {None{} == F.RO(ocons(a, r, m2), ms, k) : Maybe<V>}:
+  match m2:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{r2, u2}:
+          F.ocN2(a, r, r2, u2, ms, k, hm)
+
+def F.bindN(+g: Nat, +a: String, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == None{} : Maybe<TxtT>}, m: Maybe<&2, PR>, -ms: List<(TxtT & V)>, -k: F.K) -> {None{} == F.RO(Maybe.bind(&2, PR, PR, m, +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), ms, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{+p}:
+      F.ocN(a, prr(p), pv(g, MO{}, skip_ws(prt(p))), ms, k, z => F.memNt(a, prr(p), et, z))
+
+def F.colN2(+g: Nat, +a: String, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == None{} : Maybe<TxtT>}, +w1: String, -ms: List<(TxtT & V)>, -k: F.K, b: Bool) -> {None{} == F.RO(sel(Maybe<&2, PR>, b, z => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w1)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), z => None{}), ms, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      F.bindN(g, a, et, pv(g, MV{}, skip_ws(w1)), ms, k)
+    case False{}:
+      {==}
+
+def F.colN(+g: Nat, +a: String, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == None{} : Maybe<TxtT>}, x: String, -ms: List<(TxtT & V)>, -k: F.K) -> {None{} == F.RO(colon(x, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p)))))), ms, k) : Maybe<V>}:
+  match x:
+    case SNil{}:
+      {==}
+    case SCon{+x1, +w1}:
+      F.colN2(g, a, et, w1, ms, k, Char.is_eq(':', x1))
+
+# What MM reads is an object.
+def F.ObjR2(r: Raw) -> Type:
+  match r:
+    case RObj{ys}:
+      Unit
+    case _:
+      Empty
+
+def F.ObjR(m: Maybe<&2, PR>) -> Type:
+  match m:
+    case None{}:
+      Unit
+    case Some{p}:
+      match p:
+        case PR{r, u}:
+          F.ObjR2(r)
+
+def F.ObjR.oc(+a: String, +r: Raw, r2: Raw) -> F.ObjR2(ocons1(a, r, r2)):
+  match r2:
+    case RObj{ys}:
+      Unit{}
+    case RNull{}:
+      Unit{}
+    case RBool{b}:
+      Unit{}
+    case RNum{s}:
+      Unit{}
+    case RStr{s}:
+      Unit{}
+    case RArr{xs}:
+      Unit{}
+
+def F.ObjR.ocons(+a: String, +r: Raw, m2: Maybe<&2, PR>) -> F.ObjR(ocons(a, r, m2)):
+  match m2:
+    case None{}:
+      Unit{}
+    case Some{p}:
+      match p:
+        case PR{r2, u2}:
+          F.ObjR.oc(a, r, r2)
+
+def F.ObjR.bind2(+g: Nat, +a: String, m: Maybe<&2, PR>) -> F.ObjR(Maybe.bind(&2, PR, PR, m, +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p)))))):
+  match m:
+    case None{}:
+      Unit{}
+    case Some{+p}:
+      F.ObjR.ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))
+
+def F.ObjR.colon2(+g: Nat, +a: String, +w1: String, b: Bool) -> F.ObjR(sel(Maybe<&2, PR>, b, z => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w1)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), z => None{})):
+  match b:
+    case True{}:
+      F.ObjR.bind2(g, a, pv(g, MV{}, skip_ws(w1)))
+    case False{}:
+      Unit{}
+
+def F.ObjR.colon(+g: Nat, +a: String, x: String) -> F.ObjR(colon(x, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))))):
+  match x:
+    case SNil{}:
+      Unit{}
+    case SCon{+x1, +w1}:
+      F.ObjR.colon2(g, a, w1, Char.is_eq(':', x1))
+
+def F.ObjR.bind1(+g: Nat, sm: Maybe<&2, SP>) -> F.ObjR(Maybe.bind(&2, SP, PR, sm, +q => colon(skip_ws(spt(q)), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(spa(q), prr(p), pv(g, MO{}, skip_ws(prt(p)))))))):
+  match sm:
+    case None{}:
+      Unit{}
+    case Some{+q}:
+      F.ObjR.colon(g, spa(q), skip_ws(spt(q)))
+
+def F.pvObj2(+g: Nat, +t: String, b: Bool) -> F.ObjR(sel(Maybe<&2, PR>, b, u => Maybe.bind(&2, SP, PR, str_scan(t, SN{}), +q => colon(skip_ws(spt(q)), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(spa(q), prr(p), pv(g, MO{}, skip_ws(prt(p))))))), u => None{})):
+  match b:
+    case True{}:
+      F.ObjR.bind1(g, str_scan(t, SN{}))
+    case False{}:
+      Unit{}
+
+def F.pvObj(f: Nat, s: String) -> F.ObjR(pv(f, MM{}, s)):
+  match f:
+    case 0n:
+      Unit{}
+    case 1n+ +g:
+      match s:
+        case SNil{}:
+          Unit{}
+        case SCon{+c, +t}:
+          F.pvObj2(g, t, Char.is_eq('"', c))
+
+def F.obsO0w(-tx: TxtT, -v: V, w: V, -u: String, -k: F.K) -> {F.obs(u, F.complete(F.appO([], consO((tx, v), w)), k)) == F.obs(u, F.complete(consO((tx, v), w), k)) : Maybe<V>}:
+  match w:
+    case VNull{}:
+      {==}
+    case VBool{b}:
+      {==}
+    case VNum{n}:
+      {==}
+    case VStr{t}:
+      {==}
+    case VArr{ys}:
+      {==}
+    case VObj{os}:
+      {==}
+
+def F.obsO0c(mt: Maybe<TxtT>, mv: Maybe<V>, mw: Maybe<V>, -u: String, -k: F.K) -> {F.obsO(memM(mt, mv, mw), [], u, k) == F.obsV(memM(mt, mv, mw), u, k) : Maybe<V>}:
+  match mt:
+    case None{}:
+      {==}
+    case Some{tx}:
+      match mv:
+        case None{}:
+          {==}
+        case Some{v}:
+          match mw:
+            case None{}:
+              {==}
+            case Some{w}:
+              F.obsO0w(tx, v, w, u, k)
+
+def F.obsO0y(ys: List<&2, RMem>, -u: String, -k: F.K) -> {F.obsO(rvM(RObj{ys}), [], u, k) == F.obsV(rvM(RObj{ys}), u, k) : Maybe<V>}:
+  match ys:
+    case []:
+      {==}
+    case m <> rest:
+      match m:
+        case RMem{a, r}:
+          F.obsO0c(Laws.Text.make.try.era(Laws.decode.era(a)), rvM(r), rvM(RObj{rest}), u, k)
+
+def F.RO0(m: Maybe<&2, PR>, ob: F.ObjR(m), -k: F.K) -> {F.RO(m, [], k) == F.RV(m, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{r, u}:
+          match r:
+            case RObj{ys}:
+              F.obsO0y(ys, u, k)
+            case RNull{}:
+              match ob:
+            case RBool{b}:
+              match ob:
+            case RNum{s}:
+              match ob:
+            case RStr{s}:
+              match ob:
+            case RArr{xs}:
+              match ob:
+
+# Whitespace and fuel
+# ===================
+
+def F.notb(b: Bool) -> Bool:
+  match b:
+    case True{}:
+      False{}
+    case False{}:
+      True{}
+
+# s starts with no whitespace.
+def F.nows(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{c, t}:
+      F.notb(isws(c))
+
+def F.notbT(b: Bool, +h: {F.notb(b) == True{} : Bool}) -> {b == False{} : Bool}:
+  match b:
+    case True{}:
+      Empty.absurd({True{} == False{} : Bool}, false_ne_true(h))
+    case False{}:
+      {==}
+
+def F.nowsW(+c: Char, -t: String, +h: {F.nows(SCon{c, t}) == True{} : Bool}) -> {isws(c) == False{} : Bool}:
+  F.notbT(isws(c), h)
+
+def F.skipNows.b(+c: Char, +t: String, b: Bool, +e: {isws(c) == b : Bool}, ih: {F.nows(skip_ws(t)) == True{} : Bool}) -> {F.nows(sel(String, b, u => skip_ws(t), u => SCon{c, t})) == True{} : Bool}:
+  match b:
+    case True{}:
+      ih
+    case False{}:
+      %Equal.sym(Bool, isws(c), False{}, e) : {F.notb(_) == True{} : Bool}
+      {==}
+
+def F.skipNows(s: String) -> {F.nows(skip_ws(s)) == True{} : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      F.skipNows.b(c, t, isws(c), {==}, F.skipNows(t))
+
+def F.pvNil(f: Nat, md: Md) -> {pv(f, md, SNil{}) == None{} : Maybe<&2, PR>}:
+  match f:
+    case 0n:
+      {==}
+    case 1n+g:
+      match md:
+        case MV{}:
+          {==}
+        case MA{}:
+          {==}
+        case MM{}:
+          {==}
+        case MO{}:
+          {==}
+
+# The rest after a result is no longer than the text read.
+def F.LeR(m: Maybe<&2, PR>, y: String) -> Type:
+  match m:
+    case None{}:
+      Unit
+    case Some{p}:
+      {le(String.length(prt(p)), String.length(y)) == True{} : Bool}
+
+def F.psrLe2(+z: String, +u: String, -y: String, +e: {String.append(z, u) == y : String}) -> {le(String.length(u), String.length(y)) == True{} : Bool}:
+  %e : {le(String.length(u), String.length(_)) == True{} : Bool}
+  leSuf(z, u)
+
+def F.psrLe(-R: ABNF.Rule, m: Maybe<&2, PR>, -y: String, ps: PSR(GRAMMAR, {==}, R, m, y)) -> F.LeR(m, y):
+  match m:
+    case None{}:
+      Unit{}
+    case Some{+p}:
+      (+z, ez, hz, hw) = ps
+      F.psrLe2(z, prt(p), y, ez)
+
+def F.pvLe(+g: Nat, +md: Md, +y: String) -> F.LeR(pv(g, md, y), y):
+  F.psrLe(TM(md), pv(g, md, y), y, Sound(GRAMMAR, {==}, g, md, y))
+
+def F.leP(+a: Nat, +g: Nat, +h: {le(1n+a, g) == True{} : Bool}) -> {le(a, g) == True{} : Bool}:
+  le_trans(a, 1n+a, g, le_succ_r(a, a, le_refl(a)), h)
+
+def F.fuel0(+t: String, +g: Nat, +h: {le(1n+String.length(t), g) == True{} : Bool}) -> {le(1n+String.length(skip_ws(t)), g) == True{} : Bool}:
+  le_trans(1n+String.length(skip_ws(t)), 1n+String.length(t), g, leSkip(t), h)
+
+def F.fuel1(+u: String, +y: String, +g: Nat, +lr: {le(String.length(u), String.length(y)) == True{} : Bool}, +hf: {le(1n+String.length(y), g) == True{} : Bool}) -> {le(1n+String.length(skip_ws(u)), g) == True{} : Bool}:
+  F.fuel0(u, g, le_trans(1n+String.length(u), 1n+String.length(y), g, lr, hf))
+
+def F.fuel2(+w: String, +g: Nat, +h: {le(1n+1n+String.length(w), g) == True{} : Bool}) -> {le(1n+String.length(skip_ws(w)), g) == True{} : Bool}:
+  F.fuel0(w, g, F.leP(1n+String.length(w), g, h))
+
+def F.fuelS1(+a: String, +u: String, -t: String, +en: {String.append(a, SCon{'"', u}) == t : String}) -> {le(1n+String.length(u), String.length(t)) == True{} : Bool}:
+  %en : {le(1n+String.length(u), String.length(_)) == True{} : Bool}
+  leSuf(a, SCon{'"', u})
+
+def F.fuelS(+a: String, +u: String, +t: String, +g: Nat, +en: {String.append(a, SCon{'"', u}) == t : String}, +hf: {le(1n+String.length(t), g) == True{} : Bool}) -> {le(1n+String.length(u), g) == True{} : Bool}:
+  le_trans(1n+String.length(u), String.length(t), g, F.fuelS1(a, u, t, en), F.leP(String.length(t), g, hf))
+
+# The induction hypotheses, one per mode of pv.
+def F.IHV(g: Nat) -> Type:
+  @y:String -> @-k:F.K -> @kf:F.KF(k) -> @hn:{F.nows(y) == True{} : Bool} -> @hf:{le(1n+String.length(y), g) == True{} : Bool} -> {F.obs(y, ZV{k}) == F.RV(pv(g, MV{}, y), k) : Maybe<V>}
+
+def F.IHA(g: Nat) -> Type:
+  @y:String -> @-xs:List<V> -> @-k:F.K -> @hn:{F.nows(y) == True{} : Bool} -> @hf:{le(1n+String.length(y), g) == True{} : Bool} -> {F.obs(y, ZAN{xs, k}) == F.RA(pv(g, MA{}, y), xs, k) : Maybe<V>}
+
+def F.IHM(g: Nat) -> Type:
+  @y:String -> @-ms:List<(TxtT & V)> -> @-k:F.K -> @hn:{F.nows(y) == True{} : Bool} -> @hf:{le(1n+String.length(y), g) == True{} : Bool} -> {F.obs(y, ZOK{ms, k}) == F.RO(pv(g, MM{}, y), ms, k) : Maybe<V>}
+
+def F.IHO(g: Nat) -> Type:
+  @y:String -> @-ms:List<(TxtT & V)> -> @-k:F.K -> @hn:{F.nows(y) == True{} : Bool} -> @hf:{le(1n+String.length(y), g) == True{} : Bool} -> {F.obs(y, ZON{ms, k}) == F.RO(pv(g, MO{}, y), ms, k) : Maybe<V>}
+
+# After an element: the rest of the array.
+def F.stepA2(+g: Nat, +r: Raw, +u: String, +y: String, -xs: List<V>, -k: F.K, mv: Maybe<V>, +e: {rvM(r) == mv : Maybe<V>}, +lr: {le(String.length(u), String.length(y)) == True{} : Bool}, +hf: {le(1n+String.length(y), g) == True{} : Bool}, ihA: F.IHA(g)) -> {F.obsV(mv, u, KA{xs, k}) == F.RA(acons(r, pv(g, MA{}, skip_ws(u))), xs, k) : Maybe<V>}:
+  match mv:
+    case None{}:
+      F.cAN(r, e, pv(g, MA{}, skip_ws(u)), xs, k)
+    case Some{v}:
+      Equal.trans(Maybe<V>, F.obs(u, ZAN{v <> xs, k}), F.obs(skip_ws(u), ZAN{v <> xs, k}), F.RA(acons(r, pv(g, MA{}, skip_ws(u))), xs, k), F.wsObs.ZAN(u, v <> xs, k),
+        Equal.trans(Maybe<V>, F.obs(skip_ws(u), ZAN{v <> xs, k}), F.RA(pv(g, MA{}, skip_ws(u)), v <> xs, k), F.RA(acons(r, pv(g, MA{}, skip_ws(u))), xs, k),
+          ihA(skip_ws(u), v <> xs, k, F.skipNows(u), F.fuel1(u, y, g, lr, hf)),
+          F.cA(r, v, e, pv(g, MA{}, skip_ws(u)), xs, k)))
+
+def F.stepA(+g: Nat, m: Maybe<&2, PR>, +y: String, -xs: List<V>, -k: F.K, lr: F.LeR(m, y), +hf: {le(1n+String.length(y), g) == True{} : Bool}, ihA: F.IHA(g)) -> {F.RV(m, KA{xs, k}) == F.RA(Maybe.bind(&2, PR, PR, m, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), xs, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{+r, +u}:
+          F.stepA2(g, r, u, y, xs, k, rvM(r), {==}, lr, hf, ihA)
+
+def F.arr1(+g: Nat, +m: Maybe<&2, PR>, +y: String, -k: F.K, lr: F.LeR(m, y), +hf: {le(1n+String.length(y), g) == True{} : Bool}, ihA: F.IHA(g)) -> {F.RV(m, KA{[], k}) == F.RV(Maybe.bind(&2, PR, PR, m, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k) : Maybe<V>}:
+  Equal.trans(Maybe<V>, F.RV(m, KA{[], k}), F.RA(Maybe.bind(&2, PR, PR, m, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), [], k), F.RV(Maybe.bind(&2, PR, PR, m, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k),
+    F.stepA(g, m, y, [], k, lr, hf, ihA), F.arrRV(g, m, k))
+
+# After a member's value: the rest of the object.
+def F.stepO2(+g: Nat, +a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, +r: Raw, +u: String, +y: String, -ms: List<(TxtT & V)>, -k: F.K, mv: Maybe<V>, +e: {rvM(r) == mv : Maybe<V>}, +lr: {le(String.length(u), String.length(y)) == True{} : Bool}, +hf: {le(1n+String.length(y), g) == True{} : Bool}, ihO: F.IHO(g)) -> {F.obsV(mv, u, KO{tx, ms, k}) == F.RO(ocons(a, r, pv(g, MO{}, skip_ws(u))), ms, k) : Maybe<V>}:
+  match mv:
+    case None{}:
+      F.ocN(a, r, pv(g, MO{}, skip_ws(u)), ms, k, z => F.memNv(a, tx, et, r, e, z))
+    case Some{v}:
+      Equal.trans(Maybe<V>, F.obs(u, ZON{(tx, v) <> ms, k}), F.obs(skip_ws(u), ZON{(tx, v) <> ms, k}), F.RO(ocons(a, r, pv(g, MO{}, skip_ws(u))), ms, k), F.wsObs.ZON(u, (tx, v) <> ms, k),
+        Equal.trans(Maybe<V>, F.obs(skip_ws(u), ZON{(tx, v) <> ms, k}), F.RO(pv(g, MO{}, skip_ws(u)), (tx, v) <> ms, k), F.RO(ocons(a, r, pv(g, MO{}, skip_ws(u))), ms, k),
+          ihO(skip_ws(u), (tx, v) <> ms, k, F.skipNows(u), F.fuel1(u, y, g, lr, hf)),
+          F.cO(a, tx, et, r, v, e, pv(g, MO{}, skip_ws(u)), ms, k)))
+
+def F.stepO(+g: Nat, +a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, m: Maybe<&2, PR>, +y: String, -ms: List<(TxtT & V)>, -k: F.K, lr: F.LeR(m, y), +hf: {le(1n+String.length(y), g) == True{} : Bool}, ihO: F.IHO(g)) -> {F.RV(m, KO{tx, ms, k}) == F.RO(Maybe.bind(&2, PR, PR, m, +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), ms, k) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{+r, +u}:
+          F.stepO2(g, a, tx, et, r, u, y, ms, k, rvM(r), {==}, lr, hf, ihO)
+
+# The machine simulates pv
+# ========================
+
+# Values. pv tries the starts in this order; F.pvN are its later tries.
+def F.pv7(+g: Nat, +c: Char, +t: String) -> Maybe<&2, PR>:
+  sel(Maybe<&2, PR>, Char.is_eq('{', c), u => brk('}', skip_ws(t), w => Some{PR{RObj{[]}, w}}, w => pv(g, MM{}, w)), u => None{})
+
+def F.pv6(+g: Nat, +c: Char, +t: String) -> Maybe<&2, PR>:
+  sel(Maybe<&2, PR>, Char.is_eq('[', c), u => brk(']', skip_ws(t), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, w), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p)))))), u => F.pv7(g, c, t))
+
+def F.pv5(+g: Nat, +c: Char, +t: String) -> Maybe<&2, PR>:
+  sel(Maybe<&2, PR>, Char.is_eq('"', c), u => strv(str_scan(t, SN{})), u => F.pv6(g, c, t))
+
+def F.pv4(+g: Nat, +c: Char, +t: String) -> Maybe<&2, PR>:
+  sel(Maybe<&2, PR>, Char.is_eq('f', c), u => lit("alse", t, RBool{False{}}), u => F.pv5(g, c, t))
+
+def F.pv3(+g: Nat, +c: Char, +t: String) -> Maybe<&2, PR>:
+  sel(Maybe<&2, PR>, Char.is_eq('t', c), u => lit("rue", t, RBool{True{}}), u => F.pv4(g, c, t))
+
+def F.pv2(+g: Nat, +c: Char, +t: String) -> Maybe<&2, PR>:
+  sel(Maybe<&2, PR>, Char.is_eq('n', c), u => lit("ull", t, RNull{}), u => F.pv3(g, c, t))
+
+# An array: '[' read.
+def F.mvArr3(+g: Nat, +x: Char, +w: String, -k: F.K, b: Bool, +e: {Char.is_eq(']', x) == b : Bool}, +hn: {F.nows(SCon{x, w}) == True{} : Bool}, +hw: {isws(x) == False{} : Bool}, +hf: {le(1n+String.length(SCon{x, w}), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g))
+  -> {F.obs(SCon{x, w}, ZA0{k}) == F.RV(sel(Maybe<&2, PR>, b, z => Some{PR{RArr{[]}, w}}, z => Maybe.bind(&2, PR, PR, pv(g, MV{}, SCon{x, w}), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p)))))), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq(']', x, e) : {F.obs(SCon{_, w}, ZA0{k}) == F.RV(Some{PR{RArr{[]}, w}}, k) : Maybe<V>}
+      {==}
+    case False{}:
+      %Equal.sym(F.S, F.step(ZC{ZA0{k}, F.gcls(x), x}), F.vstart(x, KA{[], k}), F.a0X(x, k, hw, e)) : {F.obs(w, _) == F.RV(Maybe.bind(&2, PR, PR, pv(g, MV{}, SCon{x, w}), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k) : Maybe<V>}
+      %F.vstartG(x, KA{[], k}, hw) : {F.obs(w, _) == F.RV(Maybe.bind(&2, PR, PR, pv(g, MV{}, SCon{x, w}), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(SCon{x, w}, ZV{KA{[], k}}), F.RV(pv(g, MV{}, SCon{x, w}), KA{[], k}), F.RV(Maybe.bind(&2, PR, PR, pv(g, MV{}, SCon{x, w}), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k),
+        ihV(SCon{x, w}, KA{[], k}, F.KF.a([], k), hn, hf),
+        F.arr1(g, pv(g, MV{}, SCon{x, w}), SCon{x, w}, k, F.pvLe(g, MV{}, SCon{x, w}), hf, ihA))
+
+def F.mvArr2(+g: Nat, u: String, -k: F.K, +hn: {F.nows(u) == True{} : Bool}, +hf: {le(1n+String.length(u), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g))
+  -> {F.obs(u, ZA0{k}) == F.RV(brk(']', u, w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, w), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p)))))), k) : Maybe<V>}:
+  match u:
+    case SNil{}:
+      %Equal.sym(Maybe<&2, PR>, pv(g, MV{}, SNil{}), None{}, F.pvNil(g, MV{})) : {None{} == F.RV(Maybe.bind(&2, PR, PR, _, +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), k) : Maybe<V>}
+      {==}
+    case SCon{+x, +w}:
+      F.mvArr3(g, x, w, k, Char.is_eq(']', x), {==}, hn, F.nowsW(x, w, hn), hf, ihV, ihA)
+
+def F.mvArr(+g: Nat, +t: String, -k: F.K, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g))
+  -> {F.obs(t, ZA0{k}) == F.RV(brk(']', skip_ws(t), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, w), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p)))))), k) : Maybe<V>}:
+  Equal.trans(Maybe<V>, F.obs(t, ZA0{k}), F.obs(skip_ws(t), ZA0{k}), F.RV(brk(']', skip_ws(t), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, w), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p)))))), k),
+    F.wsObs.ZA0(t, k), F.mvArr2(g, skip_ws(t), k, F.skipNows(t), F.fuel0(t, g, hf), ihV, ihA))
+
+# An object: '{' read.
+def F.mvObj3(+g: Nat, +x: Char, +w: String, -k: F.K, b: Bool, +e: {Char.is_eq('}', x) == b : Bool}, +hn: {F.nows(SCon{x, w}) == True{} : Bool}, +hw: {isws(x) == False{} : Bool}, +hf: {le(1n+String.length(SCon{x, w}), g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(SCon{x, w}, ZO0{k}) == F.RV(sel(Maybe<&2, PR>, b, z => Some{PR{RObj{[]}, w}}, z => pv(g, MM{}, SCon{x, w})), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq('}', x, e) : {F.obs(SCon{_, w}, ZO0{k}) == F.RV(Some{PR{RObj{[]}, w}}, k) : Maybe<V>}
+      {==}
+    case False{}:
+      %Equal.sym(F.S, F.step(ZC{ZO0{k}, F.gcls(x), x}), F.step(ZC{ZOK{[], k}, F.gcls(x), x}), F.o0X(x, k, hw, e)) : {F.obs(w, _) == F.RV(pv(g, MM{}, SCon{x, w}), k) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(SCon{x, w}, ZOK{[], k}), F.RO(pv(g, MM{}, SCon{x, w}), [], k), F.RV(pv(g, MM{}, SCon{x, w}), k),
+        ihM(SCon{x, w}, [], k, hn, hf), F.RO0(pv(g, MM{}, SCon{x, w}), F.pvObj(g, SCon{x, w}), k))
+
+def F.mvObj2(+g: Nat, u: String, -k: F.K, +hn: {F.nows(u) == True{} : Bool}, +hf: {le(1n+String.length(u), g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(u, ZO0{k}) == F.RV(brk('}', u, w => Some{PR{RObj{[]}, w}}, w => pv(g, MM{}, w)), k) : Maybe<V>}:
+  match u:
+    case SNil{}:
+      %Equal.sym(Maybe<&2, PR>, pv(g, MM{}, SNil{}), None{}, F.pvNil(g, MM{})) : {None{} == F.RV(_, k) : Maybe<V>}
+      {==}
+    case SCon{+x, +w}:
+      F.mvObj3(g, x, w, k, Char.is_eq('}', x), {==}, hn, F.nowsW(x, w, hn), hf, ihM)
+
+def F.mvObj(+g: Nat, +t: String, -k: F.K, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(t, ZO0{k}) == F.RV(brk('}', skip_ws(t), w => Some{PR{RObj{[]}, w}}, w => pv(g, MM{}, w)), k) : Maybe<V>}:
+  Equal.trans(Maybe<V>, F.obs(t, ZO0{k}), F.obs(skip_ws(t), ZO0{k}), F.RV(brk('}', skip_ws(t), w => Some{PR{RObj{[]}, w}}, w => pv(g, MM{}, w)), k),
+    F.wsObs.ZO0(t, k), F.mvObj2(g, skip_ws(t), k, F.skipNows(t), F.fuel0(t, g, hf), ihM))
+
+# The tries, in pv's order.
+def F.mv7(+g: Nat, +t: String, -k: F.K, b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(t, F.vs7(b, k)) == F.RV(sel(Maybe<&2, PR>, b, u => brk('}', skip_ws(t), w => Some{PR{RObj{[]}, w}}, w => pv(g, MM{}, w)), u => None{}), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      F.mvObj(g, t, k, hf, ihM)
+    case False{}:
+      F.runX.obs(t)
+
+def F.mv6(+g: Nat, +c: Char, +t: String, -k: F.K, b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(t, F.vs6(b, c, k)) == F.RV(sel(Maybe<&2, PR>, b, u => brk(']', skip_ws(t), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, w), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p)))))), u => F.pv7(g, c, t)), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      F.mvArr(g, t, k, hf, ihV, ihA)
+    case False{}:
+      F.mv7(g, t, k, Char.is_eq('{', c), hf, ihM)
+
+def F.mv5(+g: Nat, +c: Char, +t: String, -k: F.K, kf: F.KF(k), b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(t, F.vs5(b, c, k)) == F.RV(sel(Maybe<&2, PR>, b, u => strv(str_scan(t, SN{})), u => F.pv6(g, c, t)), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZS{SNil{}, k}), F.RS(str_scan(t, SN{}), SNil{}, DN{}, None{}, k), F.RV(strv(str_scan(t, SN{})), k),
+        F.ssim(t, DN{}, None{}, SNil{}, k, {==}), F.RV.str(str_scan(t, SN{}), k, kf))
+    case False{}:
+      F.mv6(g, c, t, k, Char.is_eq('[', c), hf, ihV, ihA, ihM)
+
+def F.mv4(+g: Nat, +c: Char, +t: String, -k: F.K, kf: F.KF(k), b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(t, F.vs4(b, c, k)) == F.RV(sel(Maybe<&2, PR>, b, u => lit("alse", t, RBool{False{}}), u => F.pv5(g, c, t)), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZL{"alse", VBool{False{}}, k}), F.RL(String.starts_with(t, "alse"), t, String.length("alse"), VBool{False{}}, k), F.RV(lit("alse", t, RBool{False{}}), k),
+        F.lsim(t, 'a', "lse", VBool{False{}}, k), F.RV.lit("alse", t, RBool{False{}}, VBool{False{}}, k, {==}))
+    case False{}:
+      F.mv5(g, c, t, k, kf, Char.is_eq('"', c), hf, ihV, ihA, ihM)
+
+def F.mv3(+g: Nat, +c: Char, +t: String, -k: F.K, kf: F.KF(k), b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(t, F.vs3(b, c, k)) == F.RV(sel(Maybe<&2, PR>, b, u => lit("rue", t, RBool{True{}}), u => F.pv4(g, c, t)), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZL{"rue", VBool{True{}}, k}), F.RL(String.starts_with(t, "rue"), t, String.length("rue"), VBool{True{}}, k), F.RV(lit("rue", t, RBool{True{}}), k),
+        F.lsim(t, 'r', "ue", VBool{True{}}, k), F.RV.lit("rue", t, RBool{True{}}, VBool{True{}}, k, {==}))
+    case False{}:
+      F.mv4(g, c, t, k, kf, Char.is_eq('f', c), hf, ihV, ihA, ihM)
+
+def F.mv2(+g: Nat, +c: Char, +t: String, -k: F.K, kf: F.KF(k), b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(t, F.vs2(b, c, k)) == F.RV(sel(Maybe<&2, PR>, b, u => lit("ull", t, RNull{}), u => F.pv3(g, c, t)), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      Equal.trans(Maybe<V>, F.obs(t, ZL{"ull", VNull{}, k}), F.RL(String.starts_with(t, "ull"), t, String.length("ull"), VNull{}, k), F.RV(lit("ull", t, RNull{}), k),
+        F.lsim(t, 'u', "ll", VNull{}, k), F.RV.lit("ull", t, RNull{}, VNull{}, k, {==}))
+    case False{}:
+      F.mv3(g, c, t, k, kf, Char.is_eq('t', c), hf, ihV, ihA, ihM)
+
+def F.mv1(+g: Nat, +c: Char, +t: String, -k: F.K, kf: F.KF(k), b: Bool, +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(t, F.vs1(b, c, k)) == F.RV(sel(Maybe<&2, PR>, b, u => numv(num_scan(SCon{c, t})), u => F.pv2(g, c, t)), k) : Maybe<V>}:
+  match b:
+    case True{}:
+      F.vnum(c, t, k, kf)
+    case False{}:
+      F.mv2(g, c, t, k, kf, Char.is_eq('n', c), hf, ihV, ihA, ihM)
+
+def F.simV(+g: Nat, y: String, -k: F.K, kf: F.KF(k), +hn: {F.nows(y) == True{} : Bool}, +hf: {le(1n+String.length(y), 1n+g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g), ihM: F.IHM(g))
+  -> {F.obs(y, ZV{k}) == F.RV(pv(1n+g, MV{}, y), k) : Maybe<V>}:
+  match y:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      %Equal.sym(F.S, F.step(ZC{ZV{k}, F.gcls(c), c}), F.vstart(c, k), F.vstartG(c, k, F.nowsW(c, t, hn))) : {F.obs(t, _) == F.RV(pv(1n+g, MV{}, SCon{c, t}), k) : Maybe<V>}
+      F.mv1(g, c, t, k, kf, isnum0(c), hf, ihV, ihA, ihM)
+
+# The rest of an array: after an element.
+def F.simA3(+g: Nat, +x: Char, +w: String, -xs: List<V>, -k: F.K, b: Bool, +e2: {Char.is_eq(',', x) == b : Bool}, +e: {Char.is_eq(']', x) == False{} : Bool}, +hw: {isws(x) == False{} : Bool}, +hf: {le(1n+String.length(SCon{x, w}), 1n+g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g))
+  -> {F.obs(SCon{x, w}, ZAN{xs, k}) == F.RA(sel(Maybe<&2, PR>, b, z => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), z => None{}), xs, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq(',', x, e2) : {F.obs(SCon{_, w}, ZAN{xs, k}) == F.RA(Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), xs, k) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(w, ZV{KA{xs, k}}), F.obs(skip_ws(w), ZV{KA{xs, k}}), F.RA(Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), xs, k), F.wsObs.ZV(w, KA{xs, k}),
+        Equal.trans(Maybe<V>, F.obs(skip_ws(w), ZV{KA{xs, k}}), F.RV(pv(g, MV{}, skip_ws(w)), KA{xs, k}), F.RA(Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), xs, k),
+          ihV(skip_ws(w), KA{xs, k}, F.KF.a(xs, k), F.skipNows(w), F.fuel0(w, g, hf)),
+          F.stepA(g, pv(g, MV{}, skip_ws(w)), skip_ws(w), xs, k, F.pvLe(g, MV{}, skip_ws(w)), F.fuel0(w, g, hf), ihA)))
+    case False{}:
+      %Equal.sym(F.S, F.step(ZC{ZAN{xs, k}, F.gcls(x), x}), ZX{}, F.anX(x, xs, k, hw, e, e2)) : {F.obs(w, _) == F.RA(None{}, xs, k) : Maybe<V>}
+      F.runX.obs(w)
+
+def F.simA2(+g: Nat, +x: Char, +w: String, -xs: List<V>, -k: F.K, b: Bool, +e: {Char.is_eq(']', x) == b : Bool}, +hw: {isws(x) == False{} : Bool}, +hf: {le(1n+String.length(SCon{x, w}), 1n+g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g))
+  -> {F.obs(SCon{x, w}, ZAN{xs, k}) == F.RA(sel(Maybe<&2, PR>, b, z => Some{PR{RArr{[]}, w}}, z => sel(Maybe<&2, PR>, Char.is_eq(',', x), z => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => acons(prr(p), pv(g, MA{}, skip_ws(prt(p))))), z => None{})), xs, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq(']', x, e) : {F.obs(SCon{_, w}, ZAN{xs, k}) == F.RA(Some{PR{RArr{[]}, w}}, xs, k) : Maybe<V>}
+      {==}
+    case False{}:
+      F.simA3(g, x, w, xs, k, Char.is_eq(',', x), {==}, e, hw, hf, ihV, ihA)
+
+def F.simA(+g: Nat, y: String, -xs: List<V>, -k: F.K, +hn: {F.nows(y) == True{} : Bool}, +hf: {le(1n+String.length(y), 1n+g) == True{} : Bool}, ihV: F.IHV(g), ihA: F.IHA(g))
+  -> {F.obs(y, ZAN{xs, k}) == F.RA(pv(1n+g, MA{}, y), xs, k) : Maybe<V>}:
+  match y:
+    case SNil{}:
+      {==}
+    case SCon{+x, +w}:
+      F.simA2(g, x, w, xs, k, Char.is_eq(']', x), {==}, F.nowsW(x, w, hn), hf, ihV, ihA)
+
+# A member: its key, ':' and its value.
+def F.memC2(+g: Nat, +a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, +x1: Char, +w1: String, -ms: List<(TxtT & V)>, -k: F.K, b: Bool, +e: {Char.is_eq(':', x1) == b : Bool}, +hw: {isws(x1) == False{} : Bool}, +hx: {le(1n+String.length(SCon{x1, w1}), g) == True{} : Bool}, ihV: F.IHV(g), ihO: F.IHO(g))
+  -> {F.obs(SCon{x1, w1}, ZCo{tx, ms, k}) == F.RO(sel(Maybe<&2, PR>, b, z => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w1)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), z => None{}), ms, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq(':', x1, e) : {F.obs(SCon{_, w1}, ZCo{tx, ms, k}) == F.RO(Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w1)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), ms, k) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(w1, ZV{KO{tx, ms, k}}), F.obs(skip_ws(w1), ZV{KO{tx, ms, k}}), F.RO(Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w1)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), ms, k), F.wsObs.ZV(w1, KO{tx, ms, k}),
+        Equal.trans(Maybe<V>, F.obs(skip_ws(w1), ZV{KO{tx, ms, k}}), F.RV(pv(g, MV{}, skip_ws(w1)), KO{tx, ms, k}), F.RO(Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w1)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p))))), ms, k),
+          ihV(skip_ws(w1), KO{tx, ms, k}, F.KF.o(tx, ms, k), F.skipNows(w1), F.fuel2(w1, g, hx)),
+          F.stepO(g, a, tx, et, pv(g, MV{}, skip_ws(w1)), skip_ws(w1), ms, k, F.pvLe(g, MV{}, skip_ws(w1)), F.fuel2(w1, g, hx), ihO)))
+    case False{}:
+      %Equal.sym(F.S, F.step(ZC{ZCo{tx, ms, k}, F.gcls(x1), x1}), ZX{}, F.coX(x1, tx, ms, k, hw, e)) : {F.obs(w1, _) == F.RO(None{}, ms, k) : Maybe<V>}
+      F.runX.obs(w1)
+
+def F.memC(+g: Nat, +a: String, -tx: TxtT, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == Some{tx} : Maybe<TxtT>}, x: String, -ms: List<(TxtT & V)>, -k: F.K, +hn: {F.nows(x) == True{} : Bool}, +hx: {le(1n+String.length(x), g) == True{} : Bool}, ihV: F.IHV(g), ihO: F.IHO(g))
+  -> {F.obs(x, ZCo{tx, ms, k}) == F.RO(colon(x, w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p)))))), ms, k) : Maybe<V>}:
+  match x:
+    case SNil{}:
+      {==}
+    case SCon{+x1, +w1}:
+      F.memC2(g, a, tx, et, x1, w1, ms, k, Char.is_eq(':', x1), {==}, F.nowsW(x1, w1, hn), hx, ihV, ihO)
+
+def F.memS2(+g: Nat, +a: String, +u: String, -ms: List<(TxtT & V)>, -k: F.K, mt: Maybe<TxtT>, +et: {Laws.Text.make.try.era(Laws.decode.era(a)) == mt : Maybe<TxtT>}, +hu: {le(1n+String.length(u), g) == True{} : Bool}, ihV: F.IHV(g), ihO: F.IHO(g))
+  -> {F.obsT2(mt, u, KKey{ms, k}) == F.RO(colon(skip_ws(u), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p)))))), ms, k) : Maybe<V>}:
+  match mt:
+    case None{}:
+      F.colN(g, a, et, skip_ws(u), ms, k)
+    case Some{tx}:
+      Equal.trans(Maybe<V>, F.obs(u, ZCo{tx, ms, k}), F.obs(skip_ws(u), ZCo{tx, ms, k}), F.RO(colon(skip_ws(u), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(a, prr(p), pv(g, MO{}, skip_ws(prt(p)))))), ms, k),
+        F.wsObs.ZCo(u, tx, ms, k), F.memC(g, a, tx, et, skip_ws(u), ms, k, F.skipNows(u), F.fuel0(u, g, hu), ihV, ihO))
+
+def F.memS(+g: Nat, sm: Maybe<&2, SP>, +t: String, -ms: List<(TxtT & V)>, -k: F.K, ns: SNS(GRAMMAR, {==}, sm, t, STR(SN{})), +hf: {le(1n+String.length(t), g) == True{} : Bool}, ihV: F.IHV(g), ihO: F.IHO(g))
+  -> {F.RS(sm, SNil{}, DN{}, None{}, KKey{ms, k}) == F.RO(Maybe.bind(&2, SP, PR, sm, +q => colon(skip_ws(spt(q)), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(spa(q), prr(p), pv(g, MO{}, skip_ws(prt(p))))))), ms, k) : Maybe<V>}:
+  match sm:
+    case None{}:
+      {==}
+    case Some{q}:
+      match q:
+        case SP{+a, +u}:
+          (en, hc) = ns
+          F.memS2(g, a, u, ms, k, Laws.Text.make.try.era(Laws.decode.era(a)), {==}, F.fuelS(a, u, t, g, en, hf), ihV, ihO)
+
+def F.simM2(+g: Nat, +c: Char, +t: String, -ms: List<(TxtT & V)>, -k: F.K, b: Bool, +e: {Char.is_eq('"', c) == b : Bool}, +hw: {isws(c) == False{} : Bool}, +hf: {le(1n+String.length(SCon{c, t}), 1n+g) == True{} : Bool}, ihV: F.IHV(g), ihO: F.IHO(g))
+  -> {F.obs(SCon{c, t}, ZOK{ms, k}) == F.RO(sel(Maybe<&2, PR>, b, u => Maybe.bind(&2, SP, PR, str_scan(t, SN{}), +q => colon(skip_ws(spt(q)), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(spa(q), prr(p), pv(g, MO{}, skip_ws(prt(p))))))), u => None{}), ms, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq('"', c, e) : {F.obs(SCon{_, t}, ZOK{ms, k}) == F.RO(Maybe.bind(&2, SP, PR, str_scan(t, SN{}), +q => colon(skip_ws(spt(q)), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(spa(q), prr(p), pv(g, MO{}, skip_ws(prt(p))))))), ms, k) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(t, ZS{SNil{}, KKey{ms, k}}), F.RS(str_scan(t, SN{}), SNil{}, DN{}, None{}, KKey{ms, k}), F.RO(Maybe.bind(&2, SP, PR, str_scan(t, SN{}), +q => colon(skip_ws(spt(q)), w => Maybe.bind(&2, PR, PR, pv(g, MV{}, skip_ws(w)), +p => ocons(spa(q), prr(p), pv(g, MO{}, skip_ws(prt(p))))))), ms, k),
+        F.ssim(t, DN{}, None{}, SNil{}, KKey{ms, k}, {==}), F.memS(g, str_scan(t, SN{}), t, ms, k, strS(GRAMMAR, {==}, t, SN{}), hf, ihV, ihO))
+    case False{}:
+      %Equal.sym(F.S, F.step(ZC{ZOK{ms, k}, F.gcls(c), c}), ZX{}, F.okX(c, ms, k, hw, e)) : {F.obs(t, _) == F.RO(None{}, ms, k) : Maybe<V>}
+      F.runX.obs(t)
+
+def F.simM(+g: Nat, y: String, -ms: List<(TxtT & V)>, -k: F.K, +hn: {F.nows(y) == True{} : Bool}, +hf: {le(1n+String.length(y), 1n+g) == True{} : Bool}, ihV: F.IHV(g), ihO: F.IHO(g))
+  -> {F.obs(y, ZOK{ms, k}) == F.RO(pv(1n+g, MM{}, y), ms, k) : Maybe<V>}:
+  match y:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      F.simM2(g, c, t, ms, k, Char.is_eq('"', c), {==}, F.nowsW(c, t, hn), hf, ihV, ihO)
+
+# The rest of an object: after a member.
+def F.simO3(+g: Nat, +x: Char, +w: String, -ms: List<(TxtT & V)>, -k: F.K, b: Bool, +e2: {Char.is_eq(',', x) == b : Bool}, +e: {Char.is_eq('}', x) == False{} : Bool}, +hw: {isws(x) == False{} : Bool}, +hf: {le(1n+String.length(SCon{x, w}), 1n+g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(SCon{x, w}, ZON{ms, k}) == F.RO(sel(Maybe<&2, PR>, b, z => pv(g, MM{}, skip_ws(w)), z => None{}), ms, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq(',', x, e2) : {F.obs(SCon{_, w}, ZON{ms, k}) == F.RO(pv(g, MM{}, skip_ws(w)), ms, k) : Maybe<V>}
+      Equal.trans(Maybe<V>, F.obs(w, ZOK{ms, k}), F.obs(skip_ws(w), ZOK{ms, k}), F.RO(pv(g, MM{}, skip_ws(w)), ms, k), F.wsObs.ZOK(w, ms, k), ihM(skip_ws(w), ms, k, F.skipNows(w), F.fuel0(w, g, hf)))
+    case False{}:
+      %Equal.sym(F.S, F.step(ZC{ZON{ms, k}, F.gcls(x), x}), ZX{}, F.onX(x, ms, k, hw, e, e2)) : {F.obs(w, _) == F.RO(None{}, ms, k) : Maybe<V>}
+      F.runX.obs(w)
+
+def F.simO2(+g: Nat, +x: Char, +w: String, -ms: List<(TxtT & V)>, -k: F.K, b: Bool, +e: {Char.is_eq('}', x) == b : Bool}, +hw: {isws(x) == False{} : Bool}, +hf: {le(1n+String.length(SCon{x, w}), 1n+g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(SCon{x, w}, ZON{ms, k}) == F.RO(sel(Maybe<&2, PR>, b, z => Some{PR{RObj{[]}, w}}, z => sel(Maybe<&2, PR>, Char.is_eq(',', x), z => pv(g, MM{}, skip_ws(w)), z => None{})), ms, k) : Maybe<V>}:
+  match b:
+    case True{}:
+      %char_eq('}', x, e) : {F.obs(SCon{_, w}, ZON{ms, k}) == F.RO(Some{PR{RObj{[]}, w}}, ms, k) : Maybe<V>}
+      {==}
+    case False{}:
+      F.simO3(g, x, w, ms, k, Char.is_eq(',', x), {==}, e, hw, hf, ihM)
+
+def F.simO(+g: Nat, y: String, -ms: List<(TxtT & V)>, -k: F.K, +hn: {F.nows(y) == True{} : Bool}, +hf: {le(1n+String.length(y), 1n+g) == True{} : Bool}, ihM: F.IHM(g))
+  -> {F.obs(y, ZON{ms, k}) == F.RO(pv(1n+g, MO{}, y), ms, k) : Maybe<V>}:
+  match y:
+    case SNil{}:
+      {==}
+    case SCon{+x, +w}:
+      F.simO2(g, x, w, ms, k, Char.is_eq('}', x), {==}, F.nowsW(x, w, hn), hf, ihM)
+
+# All four modes, by fuel.
+def F.G(f: Nat, md: Md, y: String, -xs: List<V>, -ms: List<(TxtT & V)>, -k: F.K) -> Type:
+  match md:
+    case MV{}:
+      {F.obs(y, ZV{k}) == F.RV(pv(f, MV{}, y), k) : Maybe<V>}
+    case MA{}:
+      {F.obs(y, ZAN{xs, k}) == F.RA(pv(f, MA{}, y), xs, k) : Maybe<V>}
+    case MM{}:
+      {F.obs(y, ZOK{ms, k}) == F.RO(pv(f, MM{}, y), ms, k) : Maybe<V>}
+    case MO{}:
+      {F.obs(y, ZON{ms, k}) == F.RO(pv(f, MO{}, y), ms, k) : Maybe<V>}
+
+def F.FOK(md: Md, k: F.K) -> Type:
+  match md:
+    case MV{}:
+      F.KF(k)
+    case MA{}:
+      Unit
+    case MM{}:
+      Unit
+    case MO{}:
+      Unit
+
+def F.sim(f: Nat, md: Md, +y: String, -xs: List<V>, -ms: List<(TxtT & V)>, -k: F.K, kf: F.FOK(md, k), +hn: {F.nows(y) == True{} : Bool}, +hf: {le(1n+String.length(y), f) == True{} : Bool}) -> F.G(f, md, y, xs, ms, k):
+  match f:
+    case 0n:
+      Empty.absurd(F.G(0n, md, y, xs, ms, k), false_ne_true(hf))
+    case 1n+ +g:
+      match md:
+        case MV{}:
+          F.simV(g, y, k, kf, hn, hf,
+            +y2 => k2 => kf2 => +h1 => +h2 => F.sim(g, MV{}, y2, [], [], k2, kf2, h1, h2),
+            +y2 => xs2 => k2 => +h1 => +h2 => F.sim(g, MA{}, y2, xs2, [], k2, Unit{}, h1, h2),
+            +y2 => ms2 => k2 => +h1 => +h2 => F.sim(g, MM{}, y2, [], ms2, k2, Unit{}, h1, h2))
+        case MA{}:
+          F.simA(g, y, xs, k, hn, hf,
+            +y2 => k2 => kf2 => +h1 => +h2 => F.sim(g, MV{}, y2, [], [], k2, kf2, h1, h2),
+            +y2 => xs2 => k2 => +h1 => +h2 => F.sim(g, MA{}, y2, xs2, [], k2, Unit{}, h1, h2))
+        case MM{}:
+          F.simM(g, y, ms, k, hn, hf,
+            +y2 => k2 => kf2 => +h1 => +h2 => F.sim(g, MV{}, y2, [], [], k2, kf2, h1, h2),
+            +y2 => ms2 => k2 => +h1 => +h2 => F.sim(g, MO{}, y2, [], ms2, k2, Unit{}, h1, h2))
+        case MO{}:
+          F.simO(g, y, ms, k, hn, hf,
+            +y2 => ms2 => k2 => +h1 => +h2 => F.sim(g, MM{}, y2, [], ms2, k2, Unit{}, h1, h2))
+
+# The fast loader is the reference loader
+# =======================================
+
+def F.selM(b: Bool, m: Maybe<V>) -> Maybe<V>:
+  match b:
+    case True{}:
+      m
+    case False{}:
+      None{}
+
+def F.lvmk(+r: Raw, b: Bool, e: {wf(r) == b : Bool}) -> {lv(mk(r, b, e)) == F.selM(b, rvM(r)) : Maybe<V>}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.selMT(b: Bool, -m: Maybe<V>, +h: {b == True{} : Bool}) -> {F.selM(b, m) == m : Maybe<V>}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      Empty.absurd({F.selM(False{}, m) == m : Maybe<V>}, false_ne_true(h))
+
+def F.lvfin(+r: Raw, +hw: {wf(r) == True{} : Bool}, b: Bool) -> {lv(fin2(r, b)) == F.selM(b, rvM(r)) : Maybe<V>}:
+  match b:
+    case True{}:
+      Equal.trans(Maybe<V>, lv(mk(r, wf(r), {==})), F.selM(wf(r), rvM(r)), rvM(r), F.lvmk(r, wf(r), {==}), F.selMT(wf(r), rvM(r), hw))
+    case False{}:
+      {==}
+
+def F.wsvSel(b: Bool, -v: V) -> {F.wsv(b, v) == F.selM(b, Some{v}) : Maybe<V>}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.selMN(b: Bool) -> {None{} == F.selM(b, None{}) : Maybe<V>}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def F.topEq3(mv: Maybe<V>, +u: String) -> {F.obsV(mv, u, KTop{}) == F.selM(wsall(u), mv) : Maybe<V>}:
+  match mv:
+    case None{}:
+      F.selMN(wsall(u))
+    case Some{v}:
+      Equal.trans(Maybe<V>, F.obs(u, ZD{v}), F.wsv(wsall(u), v), F.selM(wsall(u), Some{v}), F.zdObs(u, v), F.wsvSel(wsall(u), v))
+
+def F.wsEq.b(+c: Char, +t: String, b: Bool, ih: {wsall(t) == String.is_empty(skip_ws(t)) : Bool}) -> {Bool.and(b, wsall(t)) == String.is_empty(sel(String, b, u => skip_ws(t), u => SCon{c, t})) : Bool}:
+  match b:
+    case True{}:
+      ih
+    case False{}:
+      {==}
+
+def F.wsEq(s: String) -> {wsall(s) == String.is_empty(skip_ws(s)) : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+c, +t}:
+      F.wsEq.b(c, t, isws(c), F.wsEq(t))
+
+def F.topEq4(+r: Raw, +u: String, +hw: {wf(r) == True{} : Bool}) -> {F.selM(wsall(u), rvM(r)) == lv(fin2(r, String.is_empty(skip_ws(u)))) : Maybe<V>}:
+  %F.wsEq(u) : {F.selM(wsall(u), rvM(r)) == lv(fin2(r, _)) : Maybe<V>}
+  Equal.sym(Maybe<V>, lv(fin2(r, wsall(u))), F.selM(wsall(u), rvM(r)), F.lvfin(r, hw, wsall(u)))
+
+def F.topEq(m: Maybe<&2, PR>, -y: String, ps: PSR(GRAMMAR, {==}, TM(MV{}), m, y)) -> {F.RV(m, KTop{}) == lv(fin(m)) : Maybe<V>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{p}:
+      match p:
+        case PR{+r, +u}:
+          (+z, ez, hz, hw) = ps
+          Equal.trans(Maybe<V>, F.obsV(rvM(r), u, KTop{}), F.selM(wsall(u), rvM(r)), lv(fin2(r, String.is_empty(skip_ws(u)))), F.topEq3(rvM(r), u), F.topEq4(r, u, hw))
+
+def F.loadEq(+s: String) -> {F.load(s) == lv(load.ref(s)) : Maybe<V>}:
+  Equal.trans(Maybe<V>, F.load(s), F.obs(s, ZV{KTop{}}), lv(load.ref(s)), F.loadRun(s),
+    Equal.trans(Maybe<V>, F.obs(s, ZV{KTop{}}), F.obs(skip_ws(s), ZV{KTop{}}), lv(load.ref(s)), F.wsObs.ZV(s, KTop{}),
+      Equal.trans(Maybe<V>, F.obs(skip_ws(s), ZV{KTop{}}), F.RV(pv(1n+String.length(skip_ws(s)), MV{}, skip_ws(s)), KTop{}), lv(load.ref(s)),
+        F.sim(1n+String.length(skip_ws(s)), MV{}, skip_ws(s), [], [], KTop{}, F.KF.top(), F.skipNows(s), le_refl(1n+String.length(skip_ws(s)))),
+        F.topEq(pv(1n+String.length(skip_ws(s)), MV{}, skip_ws(s)), skip_ws(s), Sound(GRAMMAR, {==}, 1n+String.length(skip_ws(s)), MV{}, skip_ws(s))))))
+
+# The reference loader: the parser the laws were first proven of.
+def R.le(s: String) -> Maybe<V>:
   lv(load.ref(s))
+
+def Laws.load.era(s):
+  F.load(s)
+
+def F.toR(+E: String, -M: Maybe<V>, h: {Laws.load.era(E) == M : Maybe<V>}) -> {R.le(E) == M : Maybe<V>}:
+  Equal.trans(Maybe<V>, R.le(E), Laws.load.era(E), M, Equal.sym(Maybe<V>, Laws.load.era(E), R.le(E), F.loadEq(E)), h)
+
+def F.fromR(+E: String, -M: Maybe<V>, h: {R.le(E) == M : Maybe<V>}) -> {Laws.load.era(E) == M : Maybe<V>}:
+  Equal.trans(Maybe<V>, Laws.load.era(E), R.le(E), M, F.loadEq(E), h)
 
 def Laws.load(s):
   +x = s
@@ -6617,14 +12335,14 @@ def isNone(m: Maybe<Js>, h: {Maybe.is_some(&1, Js, m) == False{} : Bool}) -> {m 
     case Some{j}:
       Empty.absurd({Some{j} == None{} : Maybe<Js>}, bne(h))
 
-def Laws.load.none(s, h):
+def R.load.none(s: String, h: {ABNF.matches.era(Laws.grammar, "JSON-text", s) == False{} : Bool}) -> {R.le(s) == None{} : Maybe<Laws.Value>}:
   +s = s
-  %isNone(load.ref(s), Equal.trans(Bool, Maybe.is_some(&1, Js, load.ref(s)), ABNF.matches.era(toList(GRAMMAR), "JSON-text", s), False{}, load.ref.ok(GRAMMAR, {==}, s), hypF("JSON-text", s, h))) : {Laws.load.era(s) == lv(_) : Maybe<V>}
+  %isNone(load.ref(s), Equal.trans(Bool, Maybe.is_some(&1, Js, load.ref(s)), ABNF.matches.era(toList(GRAMMAR), "JSON-text", s), False{}, load.ref.ok(GRAMMAR, {==}, s), hypF("JSON-text", s, h))) : {R.le(s) == lv(_) : Maybe<V>}
   {==}
 
 # A text the parser reads loads as the value of what it builds.
-def lvEq(+S: String, +r: Raw, +u: String, +e: {pvc(MV{}, skip_ws(S)) == Some{PR{r, u}} : Maybe<&2, PR>}, +wu: {wsall(u) == True{} : Bool}) -> {Laws.load.era(S) == rvM(r) : Maybe<V>}:
-  %finEq(GRAMMAR, {==}, S, r, u, e, wu) : {Laws.load.era(S) == lv(_) : Maybe<V>}
+def lvEq(+S: String, +r: Raw, +u: String, +e: {pvc(MV{}, skip_ws(S)) == Some{PR{r, u}} : Maybe<&2, PR>}, +wu: {wsall(u) == True{} : Bool}) -> {R.le(S) == rvM(r) : Maybe<V>}:
+  %finEq(GRAMMAR, {==}, S, r, u, e, wu) : {R.le(S) == lv(_) : Maybe<V>}
   {==}
 
 def wsApp(u: String, -w: String, +hu: {wsall(u) == True{} : Bool}, +hw: {wsall(w) == True{} : Bool}) -> {wsall(String.append(u, w)) == True{} : Bool}:
@@ -6634,55 +12352,55 @@ def wsApp(u: String, -w: String, +hu: {wsall(u) == True{} : Bool}, +hw: {wsall(w
     case SCon{+c, +t}:
       and_intro(isws(c), wsall(String.append(t, w)), and_l(isws(c), wsall(t), hu), wsApp(t, w, and_r(isws(c), wsall(t), hu), hw))
 
-def Laws.load.text(w1, v, w2, h1, hv, h2):
+def R.load.text(w1: String, v: String, w2: String, h1: {ABNF.matches.era(Laws.grammar, "ws", w1) == True{} : Bool}, hv: {ABNF.matches.era(Laws.grammar, "value", v) == True{} : Bool}, h2: {ABNF.matches.era(Laws.grammar, "ws", w2) == True{} : Bool}) -> {R.le(w1 ++ v ++ w2) == R.le(v) : Maybe<Laws.Value>}:
   +w1 = w1
   +v = v
   +w2 = w2
   +h1 = h1
   +h2 = h2
-  withV(GRAMMAR, {==}, {Laws.load.era(String.append(w1, String.append(v, w2))) == Laws.load.era(v) : Maybe<V>}, v, hyp("value", v, hv), +r => +u => +e => +wu =>
-    Equal.trans(Maybe<V>, Laws.load.era(String.append(w1, String.append(v, w2))), rvM(r), Laws.load.era(v),
+  withV(GRAMMAR, {==}, {R.le(String.append(w1, String.append(v, w2))) == R.le(v) : Maybe<V>}, v, hyp("value", v, hv), +r => +u => +e => +wu =>
+    Equal.trans(Maybe<V>, R.le(String.append(w1, String.append(v, w2))), rvM(r), R.le(v),
       lvEq(String.append(w1, String.append(v, w2)), r, String.append(u, w2), wrapWs(GRAMMAR, {==}, w1, v, w2, wsM(GRAMMAR, {==}, w1, hyp("ws", w1, h1)), wsM(GRAMMAR, {==}, w2, hyp("ws", w2, h2)), r, u, e, wu), wsApp(u, w2, wu, wsM(GRAMMAR, {==}, w2, hyp("ws", w2, h2)))),
-      Equal.sym(Maybe<V>, Laws.load.era(v), rvM(r), lvEq(v, r, u, e, wu))))
+      Equal.sym(Maybe<V>, R.le(v), rvM(r), lvEq(v, r, u, e, wu))))
 
-def Laws.load.null(t, h):
+def R.load.null(t: String, h: {ABNF.matches.era(Laws.grammar, "null", t) == True{} : Bool}) -> {R.le(t) == Some{Laws.Value.null} : Maybe<Laws.Value>}:
   +t = t
   lvEq(t, RNull{}, SNil{}, litE(t, "null", RNull{}, csE(ABNF.full(toList(GRAMMAR)), "null", t, MBe(GRAMMAR, {==}, "null", ABNF.string.case_sensitive("null"), t, {==}, mt(GRAMMAR, {==}, "null", t, hyp("null", t, h)))), {==}), {==})
 
-def Laws.load.true(t, h):
+def R.load.true(t: String, h: {ABNF.matches.era(Laws.grammar, "true", t) == True{} : Bool}) -> {R.le(t) == Some{Laws.Value.bool(True{})} : Maybe<Laws.Value>}:
   +t = t
   lvEq(t, RBool{True{}}, SNil{}, litE(t, "true", RBool{True{}}, csE(ABNF.full(toList(GRAMMAR)), "true", t, MBe(GRAMMAR, {==}, "true", ABNF.string.case_sensitive("true"), t, {==}, mt(GRAMMAR, {==}, "true", t, hyp("true", t, h)))), {==}), {==})
 
-def Laws.load.false(t, h):
+def R.load.false(t: String, h: {ABNF.matches.era(Laws.grammar, "false", t) == True{} : Bool}) -> {R.le(t) == Some{Laws.Value.bool(False{})} : Maybe<Laws.Value>}:
   +t = t
   lvEq(t, RBool{False{}}, SNil{}, litE(t, "false", RBool{False{}}, csE(ABNF.full(toList(GRAMMAR)), "false", t, MBe(GRAMMAR, {==}, "false", ABNF.string.case_sensitive("false"), t, {==}, mt(GRAMMAR, {==}, "false", t, hyp("false", t, h)))), {==}), {==})
 
-def Laws.load.number(n, h):
+def R.load.number(n: String, h: {Laws.Number.valid(n) == True{} : Bool}) -> {R.le(n) == Some{Laws.Value.number(Laws.Number.make(n, h))} : Maybe<Laws.Value>}:
   +n = n
   +h = h
-  Equal.trans(Maybe<V>, Laws.load.era(n), numV(Laws.Number.make.try.era(n)), Some{VNum{NMk{n, h}}},
-    lvEq(n, RNum{n}, SNil{}, rtNum(GRAMMAR, {==}, n, numokOf(GRAMMAR, {==}, n, MBe(GRAMMAR, {==}, "number", ABNF.seq([ABNF.opt(ABNF.ref("minus")), ABNF.ref("int"), ABNF.opt(ABNF.ref("frac")), ABNF.opt(ABNF.ref("exp"))]), n, {==}, mt(GRAMMAR, {==}, "number", n, hyp("number", n, h))))), {==}),
+  Equal.trans(Maybe<V>, R.le(n), numV(Laws.Number.make.try.era(n)), Some{VNum{NMk{n, h}}},
+    lvEq(n, RNum{n}, SNil{}, rtNum(GRAMMAR, {==}, n, numokOf(GRAMMAR, {==}, n, MBe(GRAMMAR, {==}, "number", ABNF.seq([ABNF.opt(ABNF.ref("minus")), ABNF.ref("int"), ABNF.opt(ABNF.ref("frac")), ABNF.opt(ABNF.ref("exp"))]), n, {==}, mt(GRAMMAR, {==}, "number", n, hyp("number", n, F.numA(n, h)))))), {==}),
     Equal.cong(Maybe<NumT>, Maybe<V>, numV, Laws.Number.make.try.era(n), Some{NMk{n, h}}, Laws.Number.make.try.era.valid(n, NMk{n, h}, Laws.Number.make.try.valid(n, h))))
 
-def Laws.load.string(q1, x, q2, hq1, hq2, hx, hu):
+def R.load.string(q1: String, x: String, q2: String, hq1: {ABNF.matches.era(Laws.grammar, "quotation-mark", q1) == True{} : Bool}, hq2: {ABNF.matches.era(Laws.grammar, "quotation-mark", q2) == True{} : Bool}, hx: {ABNF.matches.era(Laws.grammar, "string", q1 ++ x ++ q2) == True{} : Bool}, hu: {Laws.Text.valid(Laws.decode.era(x)) == True{} : Bool}) -> {R.le(q1 ++ x ++ q2) == Some{Laws.Value.string(Laws.Text.make(Laws.decode.era(x), hu))} : Maybe<Laws.Value>}:
   +q1 = q1
   +x = x
   +q2 = q2
   +hq1 = hq1
   +hq2 = hq2
   +hu = hu
-  Equal.trans(Maybe<V>, Laws.load.era(String.append(q1, String.append(x, q2))), strV(Laws.Text.make.try.era(Laws.decode.era(x))), Some{VStr{TMk{Laws.decode.era(x), hu}}},
+  Equal.trans(Maybe<V>, R.le(String.append(q1, String.append(x, q2))), strV(Laws.Text.make.try.era(Laws.decode.era(x))), Some{VStr{TMk{Laws.decode.era(x), hu}}},
     lvEq(String.append(q1, String.append(x, q2)), RStr{x}, SNil{}, strQ(GRAMMAR, {==}, q1, x, q2, qmE(GRAMMAR, {==}, q1, hyp("quotation-mark", q1, hq1)), qmE(GRAMMAR, {==}, q2, hyp("quotation-mark", q2, hq2)),
       strX(GRAMMAR, {==}, q1, x, q2, qmE(GRAMMAR, {==}, q1, hyp("quotation-mark", q1, hq1)), qmE(GRAMMAR, {==}, q2, hyp("quotation-mark", q2, hq2)), mt(GRAMMAR, {==}, "string", String.append(q1, String.append(x, q2)), hyp("string", String.append(q1, String.append(x, q2)), hx)))), {==}),
     Equal.cong(Maybe<TxtT>, Maybe<V>, strV, Laws.Text.make.try.era(Laws.decode.era(x)), Some{TMk{Laws.decode.era(x), hu}}, Laws.Text.make.try.era.valid(Laws.decode.era(x), TMk{Laws.decode.era(x), hu}, Laws.Text.make.try.valid(Laws.decode.era(x), hu))))
 
-def Laws.load.array.nil(b, e, hb, he):
+def R.load.array.nil(b: String, e: String, hb: {ABNF.matches.era(Laws.grammar, "begin-array", b) == True{} : Bool}, he: {ABNF.matches.era(Laws.grammar, "end-array", e) == True{} : Bool}) -> {R.le(b ++ e) == Some{Laws.Value.array([])} : Maybe<Laws.Value>}:
   +b = b
   +e = e
   +he = he
   lvEq(String.append(b, e), RArr{[]}, str_tl(skip_ws(e)), cvArr0.eq(b, e, tokM(GRAMMAR, {==}, "begin-array", '[', b, {==}, {==}, hyp("begin-array", b, hb)), tokM(GRAMMAR, {==}, "end-array", ']', e, {==}, {==}, hyp("end-array", e, he))), tokW(']', e, tokM(GRAMMAR, {==}, "end-array", ']', e, {==}, {==}, hyp("end-array", e, he))))
 
-def Laws.load.object.nil(b, e, hb, he):
+def R.load.object.nil(b: String, e: String, hb: {ABNF.matches.era(Laws.grammar, "begin-object", b) == True{} : Bool}, he: {ABNF.matches.era(Laws.grammar, "end-object", e) == True{} : Bool}) -> {R.le(b ++ e) == Some{Laws.Value.object([])} : Maybe<Laws.Value>}:
   +b = b
   +e = e
   +he = he
@@ -6693,17 +12411,17 @@ def consM.some(-m: Maybe<V>, -x: V, -w: Maybe<V>, +h: {m == Some{x} : Maybe<V>})
   %h : {consM(m, w) == consM(_, w) : Maybe<V>}
   {==}
 
-def Laws.load.array.one(b, v, e, hb, hv, he, x, hx):
+def R.load.array.one(b: String, v: String, e: String, hb: {ABNF.matches.era(Laws.grammar, "begin-array", b) == True{} : Bool}, hv: {ABNF.matches.era(Laws.grammar, "value", v) == True{} : Bool}, he: {ABNF.matches.era(Laws.grammar, "end-array", e) == True{} : Bool}, x: Laws.Value, hx: {R.le(v) == Some{x} : Maybe<Laws.Value>}) -> {R.le(b ++ v ++ e) == Some{Laws.Value.array([x])} : Maybe<Laws.Value>}:
   +b = b
   +v = v
   +e = e
   +hb = hb
   +he = he
   +hx = hx
-  withV(GRAMMAR, {==}, {Laws.load.era(String.append(b, String.append(v, e))) == Some{VArr{[x]}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
-    Equal.trans(Maybe<V>, Laws.load.era(String.append(b, String.append(v, e))), consM(rvM(r1), Some{VArr{[]}}), Some{VArr{[x]}},
+  withV(GRAMMAR, {==}, {R.le(String.append(b, String.append(v, e))) == Some{VArr{[x]}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
+    Equal.trans(Maybe<V>, R.le(String.append(b, String.append(v, e))), consM(rvM(r1), Some{VArr{[]}}), Some{VArr{[x]}},
       lvEq(String.append(b, String.append(v, e)), RArr{[r1]}, str_tl(skip_ws(e)), arrOneE(GRAMMAR, {==}, b, v, e, tokM(GRAMMAR, {==}, "begin-array", '[', b, {==}, {==}, hyp("begin-array", b, hb)), tokM(GRAMMAR, {==}, "end-array", ']', e, {==}, {==}, hyp("end-array", e, he)), r1, u1, e1, w1), tokW(']', e, tokM(GRAMMAR, {==}, "end-array", ']', e, {==}, {==}, hyp("end-array", e, he)))),
-      consM.some(rvM(r1), x, Some{VArr{[]}}, Equal.trans(Maybe<V>, rvM(r1), Laws.load.era(v), Some{x}, Equal.sym(Maybe<V>, Laws.load.era(v), rvM(r1), lvEq(v, r1, u1, e1, w1)), hx))))
+      consM.some(rvM(r1), x, Some{VArr{[]}}, Equal.trans(Maybe<V>, rvM(r1), R.le(v), Some{x}, Equal.sym(Maybe<V>, R.le(v), rvM(r1), lvEq(v, r1, u1, e1, w1)), hx))))
 
 def unStr(m: Maybe<V>) -> Maybe<TxtT>:
   match m:
@@ -6729,24 +12447,24 @@ def memM.some(-k: Maybe<TxtT>, -kt: TxtT, -x: Maybe<V>, -v: V, -w: Maybe<V>, +hk
   {==}
 
 # A key's text, through the value it loads to.
-def keyOf(+k: String, +xs: String, +ek: {pvc(MV{}, skip_ws(k)) == Some{PR{RStr{xs}, SNil{}}} : Maybe<&2, PR>}, -key: TxtT, +hkey: {Laws.load.era(k) == Some{VStr{key}} : Maybe<V>})
+def keyOf(+k: String, +xs: String, +ek: {pvc(MV{}, skip_ws(k)) == Some{PR{RStr{xs}, SNil{}}} : Maybe<&2, PR>}, -key: TxtT, +hkey: {R.le(k) == Some{VStr{key}} : Maybe<V>})
   -> {Laws.Text.make.try.era(Laws.decode.era(xs)) == Some{key} : Maybe<TxtT>}:
-  strV.inj(Laws.Text.make.try.era(Laws.decode.era(xs)), key, Equal.trans(Maybe<V>, strV(Laws.Text.make.try.era(Laws.decode.era(xs))), Laws.load.era(k), Some{VStr{key}}, Equal.sym(Maybe<V>, Laws.load.era(k), rvM(RStr{xs}), lvEq(k, RStr{xs}, SNil{}, ek, {==})), hkey))
+  strV.inj(Laws.Text.make.try.era(Laws.decode.era(xs)), key, Equal.trans(Maybe<V>, strV(Laws.Text.make.try.era(Laws.decode.era(xs))), R.le(k), Some{VStr{key}}, Equal.sym(Maybe<V>, R.le(k), rvM(RStr{xs}), lvEq(k, RStr{xs}, SNil{}, ek, {==})), hkey))
 
 # A value's raw tree, through the value it loads to.
-def valOf(+v: String, +r1: Raw, +u1: String, +e1: {pvc(MV{}, skip_ws(v)) == Some{PR{r1, u1}} : Maybe<&2, PR>}, +w1: {wsall(u1) == True{} : Bool}, -x: V, +hx: {Laws.load.era(v) == Some{x} : Maybe<V>}) -> {rvM(r1) == Some{x} : Maybe<V>}:
-  Equal.trans(Maybe<V>, rvM(r1), Laws.load.era(v), Some{x}, Equal.sym(Maybe<V>, Laws.load.era(v), rvM(r1), lvEq(v, r1, u1, e1, w1)), hx)
+def valOf(+v: String, +r1: Raw, +u1: String, +e1: {pvc(MV{}, skip_ws(v)) == Some{PR{r1, u1}} : Maybe<&2, PR>}, +w1: {wsall(u1) == True{} : Bool}, -x: V, +hx: {R.le(v) == Some{x} : Maybe<V>}) -> {rvM(r1) == Some{x} : Maybe<V>}:
+  Equal.trans(Maybe<V>, rvM(r1), R.le(v), Some{x}, Equal.sym(Maybe<V>, R.le(v), rvM(r1), lvEq(v, r1, u1, e1, w1)), hx)
 
 def objOne(+b: String, +k: String, +n: String, +v: String, +e: String, +hb: {tokb('{', b) == True{} : Bool}, +hn: {tokb(':', n) == True{} : Bool}, +he: {tokb('}', e) == True{} : Bool},
   +q1: String, +xs: String, +q2: String, +es: {String.append(q1, String.append(xs, q2)) == k : String}, +eq1: {q1 == SCon{'"', SNil{}} : String}, +eq2: {q2 == SCon{'"', SNil{}} : String}, +hxs: {ABNF.check.era(ABNF.full(toList(GRAMMAR)), ABNF.rep.any(ABNF.ref("char")), xs) == True{} : Bool},
-  -key: TxtT, +hkey: {Laws.load.era(k) == Some{VStr{key}} : Maybe<V>}, -x: V, +hx: {Laws.load.era(v) == Some{x} : Maybe<V>},
+  -key: TxtT, +hkey: {R.le(k) == Some{VStr{key}} : Maybe<V>}, -x: V, +hx: {R.le(v) == Some{x} : Maybe<V>},
   +r1: Raw, +u1: String, +e1: {pvc(MV{}, skip_ws(v)) == Some{PR{r1, u1}} : Maybe<&2, PR>}, +w1: {wsall(u1) == True{} : Bool})
-  -> {Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, e))))) == Some{VObj{[(key, x)]}} : Maybe<V>}:
-  Equal.trans(Maybe<V>, Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, e))))), memM(Laws.Text.make.try.era(Laws.decode.era(xs)), rvM(r1), Some{VObj{[]}}), Some{VObj{[(key, x)]}},
+  -> {R.le(String.append(b, String.append(k, String.append(n, String.append(v, e))))) == Some{VObj{[(key, x)]}} : Maybe<V>}:
+  Equal.trans(Maybe<V>, R.le(String.append(b, String.append(k, String.append(n, String.append(v, e))))), memM(Laws.Text.make.try.era(Laws.decode.era(xs)), rvM(r1), Some{VObj{[]}}), Some{VObj{[(key, x)]}},
     lvEq(String.append(b, String.append(k, String.append(n, String.append(v, e)))), RObj{[RMem{xs, r1}]}, str_tl(skip_ws(e)), loOneE(GRAMMAR, {==}, b, k, q1, xs, q2, n, v, e, es, eq1, eq2, hb, hxs, hn, he, r1, u1, e1, w1), tokW('}', e, he)),
     memM.some(Laws.Text.make.try.era(Laws.decode.era(xs)), key, rvM(r1), x, Some{VObj{[]}}, keyOf(k, xs, kE(GRAMMAR, {==}, k, q1, xs, q2, es, eq1, eq2, hxs), key, hkey), valOf(v, r1, u1, e1, w1, x, hx)))
 
-def Laws.load.object.one(b, k, n, v, e, hb, hk, hn, hv, he, key, hkey, x, hx):
+def R.load.object.one(b: String, k: String, n: String, v: String, e: String, hb: {ABNF.matches.era(Laws.grammar, "begin-object", b) == True{} : Bool}, hk: {ABNF.matches.era(Laws.grammar, "string", k) == True{} : Bool}, hn: {ABNF.matches.era(Laws.grammar, "name-separator", n) == True{} : Bool}, hv: {ABNF.matches.era(Laws.grammar, "value", v) == True{} : Bool}, he: {ABNF.matches.era(Laws.grammar, "end-object", e) == True{} : Bool}, key: Laws.Text, hkey: {R.le(k) == Some{Laws.Value.string(key)} : Maybe<Laws.Value>}, x: Laws.Value, hx: {R.le(v) == Some{x} : Maybe<Laws.Value>}) -> {R.le(b ++ k ++ n ++ v ++ e) == Some{Laws.Value.object([(key, x)])} : Maybe<Laws.Value>}:
   +b = b
   +k = k
   +n = n
@@ -6757,8 +12475,8 @@ def Laws.load.object.one(b, k, n, v, e, hb, hk, hn, hv, he, key, hkey, x, hx):
   +he = he
   +hkey = hkey
   +hx = hx
-  seqE3({Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, e))))) == Some{VObj{[(key, x)]}} : Maybe<V>}, ABNF.full(toList(GRAMMAR)), ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark"), k, MBe(GRAMMAR, {==}, "string", ABNF.seq([ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark")]), k, {==}, mt(GRAMMAR, {==}, "string", k, hyp("string", k, hk))), +q1 => +xs => +q2 => +es => +h1 => +hxs => +h3 =>
-    withV(GRAMMAR, {==}, {Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, e))))) == Some{VObj{[(key, x)]}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
+  seqE3({R.le(String.append(b, String.append(k, String.append(n, String.append(v, e))))) == Some{VObj{[(key, x)]}} : Maybe<V>}, ABNF.full(toList(GRAMMAR)), ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark"), k, MBe(GRAMMAR, {==}, "string", ABNF.seq([ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark")]), k, {==}, mt(GRAMMAR, {==}, "string", k, hyp("string", k, hk))), +q1 => +xs => +q2 => +es => +h1 => +hxs => +h3 =>
+    withV(GRAMMAR, {==}, {R.le(String.append(b, String.append(k, String.append(n, String.append(v, e))))) == Some{VObj{[(key, x)]}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
       objOne(b, k, n, v, e, tokM(GRAMMAR, {==}, "begin-object", '{', b, {==}, {==}, hyp("begin-object", b, hb)), tokM(GRAMMAR, {==}, "name-separator", ':', n, {==}, {==}, hyp("name-separator", n, hn)), tokM(GRAMMAR, {==}, "end-object", '}', e, {==}, {==}, hyp("end-object", e, he)),
         q1, xs, q2, es, charIs(ABNF.full(toList(GRAMMAR)), '"', q1, MBe(GRAMMAR, {==}, "quotation-mark", ABNF.char('"'), q1, {==}, h1)), charIs(ABNF.full(toList(GRAMMAR)), '"', q2, MBe(GRAMMAR, {==}, "quotation-mark", ABNF.char('"'), q2, {==}, h3)), hxs,
         key, hkey, x, hx, r1, u1, e1, w1)))
@@ -7025,15 +12743,15 @@ Equal.trans(Maybe<&2, PR>, pvc(MV{}, skip_ws(String.append(b, String.append(v, S
           mono(gl, hg, 1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MA{}, skip_ws(prt(p1)), p2, ep2, Equal.trans(Bool, fol(prt(p2)), fol(prt(q)), True{}, Equal.cong(PR, Bool, z => fol(prt(z)), PR{acons1(prr(p1), prr(p2)), prt(p2)}, q, eqq), folWs(prt(q), emptyWs(prt(q), hemp))), String.length(String.append(str_tl(skip_ws(b)), String.append(v, String.append(s, rest)))), leCon(str_tl(skip_ws(b)), v, s, rest, mvNE(1n+String.length(skip_ws(v)), skip_ws(v), PR{r1, u1}, e1)))),
         Equal.cong(PR, Maybe<&2, PR>, z => Some{z}, PR{acons1(prr(p1), prr(p2)), prt(p2)}, q, eqq))))
 
-def arrCons2(+b: String, +v: String, +sep: String, +rest: String, +hb: {tokb('[', b) == True{} : Bool}, +hs: {tokb(',', sep) == True{} : Bool}, -x: V, +hx: {Laws.load.era(v) == Some{x} : Maybe<V>}, -l: List<V>,
+def arrCons2(+b: String, +v: String, +sep: String, +rest: String, +hb: {tokb('[', b) == True{} : Bool}, +hs: {tokb(',', sep) == True{} : Bool}, -x: V, +hx: {R.le(v) == Some{x} : Maybe<V>}, -l: List<V>,
   +r1: Raw, +u1: String, +e1: {pvc(MV{}, skip_ws(v)) == Some{PR{r1, u1}} : Maybe<&2, PR>}, +w1: {wsall(u1) == True{} : Bool}, +q: PR, +hemp: {String.is_empty(skip_ws(prt(q))) == True{} : Bool}, +hrq: {rvM(prr(q)) == Some{VArr{l}} : Maybe<V>},
   +p1: PR, +ep1: {pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, skip_ws(rest)) == Some{p1} : Maybe<&2, PR>}, +p2: PR, +ep2: {pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MA{}, skip_ws(prt(p1))) == Some{p2} : Maybe<&2, PR>}, +eqq: {PR{acons1(prr(p1), prr(p2)), prt(p2)} == q : PR})
-  -> {Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> l}} : Maybe<V>}:
-  Equal.trans(Maybe<V>, Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))), rvM(acons1(r1, prr(q))), Some{VArr{x <> l}},
+  -> {R.le(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> l}} : Maybe<V>}:
+  Equal.trans(Maybe<V>, R.le(String.append(b, String.append(v, String.append(sep, rest)))), rvM(acons1(r1, prr(q))), Some{VArr{x <> l}},
     lvEq(String.append(b, String.append(v, String.append(sep, rest))), acons1(r1, prr(q)), prt(q), arrEF(GRAMMAR, {==}, b, v, sep, rest, hb, hs, r1, u1, e1, w1, q, hemp, p1, ep1, p2, ep2, eqq), emptyWs(prt(q), hemp)),
     aconsRv(r1, prr(q), x, l, valOf(v, r1, u1, e1, w1, x, hx), hrq))
 
-def Laws.load.array.cons(b, v, sep, rest, hb, hv, hsep, x, hx, x2, xs, hr):
+def R.load.array.cons(b: String, v: String, sep: String, rest: String, hb: {ABNF.matches.era(Laws.grammar, "begin-array", b) == True{} : Bool}, hv: {ABNF.matches.era(Laws.grammar, "value", v) == True{} : Bool}, hsep: {ABNF.matches.era(Laws.grammar, "value-separator", sep) == True{} : Bool}, x: Laws.Value, hx: {R.le(v) == Some{x} : Maybe<Laws.Value>}, x2: Laws.Value, xs: List<Laws.Value>, hr: {R.le(b ++ rest) == Some{Laws.Value.array(x2 <> xs)} : Maybe<Laws.Value>}) -> {R.le(b ++ v ++ sep ++ rest) == Some{Laws.Value.array(x <> x2 <> xs)} : Maybe<Laws.Value>}:
   +b = b
   +v = v
   +sep = sep
@@ -7041,12 +12759,12 @@ def Laws.load.array.cons(b, v, sep, rest, hb, hv, hsep, x, hx, x2, xs, hr):
   +hb = hb
   +hsep = hsep
   +hx = hx
-  withV(GRAMMAR, {==}, {Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
-    lvInv({Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, pvc(MV{}, skip_ws(String.append(b, rest))), VArr{x2 <> xs}, hr, +q => +eq => +hemp => +hrq =>
-      brkInv({Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, ']', skip_ws(rest), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, w), +p => acons(prr(p), pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MA{}, skip_ws(prt(p))))), q,
+  withV(GRAMMAR, {==}, {R.le(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
+    lvInv({R.le(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, pvc(MV{}, skip_ws(String.append(b, rest))), VArr{x2 <> xs}, hr, +q => +eq => +hemp => +hrq =>
+      brkInv({R.le(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, ']', skip_ws(rest), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, w), +p => acons(prr(p), pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MA{}, skip_ws(prt(p))))), q,
         Equal.trans(Maybe<&2, PR>, brk(']', skip_ws(rest), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, w), +p => acons(prr(p), pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MA{}, skip_ws(prt(p)))))), pvc(MV{}, skip_ws(String.append(b, rest))), Some{q}, Equal.sym(Maybe<&2, PR>, pvc(MV{}, skip_ws(String.append(b, rest))), brk(']', skip_ws(rest), w => Some{PR{RArr{[]}, w}}, w => Maybe.bind(&2, PR, PR, pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, w), +p => acons(prr(p), pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MA{}, skip_ws(prt(p)))))), arrOpen(b, rest, tokM(GRAMMAR, {==}, "begin-array", '[', b, {==}, {==}, hyp("begin-array", b, hb)))), eq),
-        +w => +hkc => emptyArrBad({Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, w, q, x2 <> xs, hkc, hrq, {==}),
-        +hko => XInv({Laws.load.era(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, 1n+String.length(String.append(str_tl(skip_ws(b)), rest)), skip_ws(rest), pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, skip_ws(rest)), {==}, q, hko, +p1 => +ep1 => +p2 => +ep2 => +eqq =>
+        +w => +hkc => emptyArrBad({R.le(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, w, q, x2 <> xs, hkc, hrq, {==}),
+        +hko => XInv({R.le(String.append(b, String.append(v, String.append(sep, rest)))) == Some{VArr{x <> x2 <> xs}} : Maybe<V>}, 1n+String.length(String.append(str_tl(skip_ws(b)), rest)), skip_ws(rest), pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MV{}, skip_ws(rest)), {==}, q, hko, +p1 => +ep1 => +p2 => +ep2 => +eqq =>
           arrCons2(b, v, sep, rest, tokM(GRAMMAR, {==}, "begin-array", '[', b, {==}, {==}, hyp("begin-array", b, hb)), tokM(GRAMMAR, {==}, "value-separator", ',', sep, {==}, {==}, hyp("value-separator", sep, hsep)), x, hx, x2 <> xs, r1, u1, e1, w1, q, hemp, hrq, p1, ep1, p2, ep2, eqq)))))
 
 # The parse of {k:v,rest, from the parse of {rest.
@@ -7060,14 +12778,14 @@ Equal.trans(Maybe<&2, PR>, pvc(MV{}, skip_ws(String.append(b, String.append(k, S
 
 def objCons2(+b: String, +k: String, +n: String, +v: String, +sep: String, +rest: String, +hb: {tokb('{', b) == True{} : Bool}, +hn: {tokb(':', n) == True{} : Bool}, +hs: {tokb(',', sep) == True{} : Bool},
   +q1: String, +xs: String, +q2: String, +es: {String.append(q1, String.append(xs, q2)) == k : String}, +eq1: {q1 == SCon{'"', SNil{}} : String}, +eq2: {q2 == SCon{'"', SNil{}} : String}, +hxs: {ABNF.check.era(ABNF.full(toList(GRAMMAR)), ABNF.rep.any(ABNF.ref("char")), xs) == True{} : Bool},
-  -key: TxtT, +hkey: {Laws.load.era(k) == Some{VStr{key}} : Maybe<V>}, -x: V, +hx: {Laws.load.era(v) == Some{x} : Maybe<V>}, -l: List<(TxtT & V)>,
+  -key: TxtT, +hkey: {R.le(k) == Some{VStr{key}} : Maybe<V>}, -x: V, +hx: {R.le(v) == Some{x} : Maybe<V>}, -l: List<(TxtT & V)>,
   +r1: Raw, +u1: String, +e1: {pvc(MV{}, skip_ws(v)) == Some{PR{r1, u1}} : Maybe<&2, PR>}, +w1: {wsall(u1) == True{} : Bool}, +q: PR, +hemp: {String.is_empty(skip_ws(prt(q))) == True{} : Bool}, +hrq: {rvM(prr(q)) == Some{VObj{l}} : Maybe<V>}, +ems: {pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MM{}, skip_ws(rest)) == Some{q} : Maybe<&2, PR>})
-  -> {Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> l}} : Maybe<V>}:
-  Equal.trans(Maybe<V>, Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))), rvM(ocons1(xs, r1, prr(q))), Some{VObj{(key, x) <> l}},
+  -> {R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> l}} : Maybe<V>}:
+  Equal.trans(Maybe<V>, R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))), rvM(ocons1(xs, r1, prr(q))), Some{VObj{(key, x) <> l}},
     lvEq(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest))))), ocons1(xs, r1, prr(q)), prt(q), objEF(GRAMMAR, {==}, b, k, n, v, sep, rest, hb, hn, hs, q1, xs, q2, es, eq1, eq2, hxs, r1, u1, e1, w1, q, hemp, ems), emptyWs(prt(q), hemp)),
     oconsRv(xs, r1, prr(q), key, x, l, keyOf(k, xs, kE(GRAMMAR, {==}, k, q1, xs, q2, es, eq1, eq2, hxs), key, hkey), valOf(v, r1, u1, e1, w1, x, hx), hrq))
 
-def Laws.load.object.cons(b, k, n, v, sep, rest, hb, hk, hn, hv, hsep, key, hkey, x, hx, m, o, hr):
+def R.load.object.cons(b: String, k: String, n: String, v: String, sep: String, rest: String, hb: {ABNF.matches.era(Laws.grammar, "begin-object", b) == True{} : Bool}, hk: {ABNF.matches.era(Laws.grammar, "string", k) == True{} : Bool}, hn: {ABNF.matches.era(Laws.grammar, "name-separator", n) == True{} : Bool}, hv: {ABNF.matches.era(Laws.grammar, "value", v) == True{} : Bool}, hsep: {ABNF.matches.era(Laws.grammar, "value-separator", sep) == True{} : Bool}, key: Laws.Text, hkey: {R.le(k) == Some{Laws.Value.string(key)} : Maybe<Laws.Value>}, x: Laws.Value, hx: {R.le(v) == Some{x} : Maybe<Laws.Value>}, m: (Laws.Text & Laws.Value), o: List<(Laws.Text & Laws.Value)>, hr: {R.le(b ++ rest) == Some{Laws.Value.object(m <> o)} : Maybe<Laws.Value>}) -> {R.le(b ++ k ++ n ++ v ++ sep ++ rest) == Some{Laws.Value.object((key, x) <> m <> o)} : Maybe<Laws.Value>}:
   +b = b
   +k = k
   +n = n
@@ -7079,12 +12797,12 @@ def Laws.load.object.cons(b, k, n, v, sep, rest, hb, hk, hn, hv, hsep, key, hkey
   +hsep = hsep
   +hkey = hkey
   +hx = hx
-  seqE3({Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, ABNF.full(toList(GRAMMAR)), ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark"), k, MBe(GRAMMAR, {==}, "string", ABNF.seq([ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark")]), k, {==}, mt(GRAMMAR, {==}, "string", k, hyp("string", k, hk))), +q1 => +xs => +q2 => +es => +h1 => +hxs => +h3 =>
-    withV(GRAMMAR, {==}, {Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
-      lvInv({Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, pvc(MV{}, skip_ws(String.append(b, rest))), VObj{m <> o}, hr, +q => +eq => +hemp => +hrq =>
-        brkInv({Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, '}', skip_ws(rest), w => Some{PR{RObj{[]}, w}}, w => pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MM{}, w), q,
+  seqE3({R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, ABNF.full(toList(GRAMMAR)), ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark"), k, MBe(GRAMMAR, {==}, "string", ABNF.seq([ABNF.ref("quotation-mark"), ABNF.rep.any(ABNF.ref("char")), ABNF.ref("quotation-mark")]), k, {==}, mt(GRAMMAR, {==}, "string", k, hyp("string", k, hk))), +q1 => +xs => +q2 => +es => +h1 => +hxs => +h3 =>
+    withV(GRAMMAR, {==}, {R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, v, hyp("value", v, hv), +r1 => +u1 => +e1 => +w1 =>
+      lvInv({R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, pvc(MV{}, skip_ws(String.append(b, rest))), VObj{m <> o}, hr, +q => +eq => +hemp => +hrq =>
+        brkInv({R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, '}', skip_ws(rest), w => Some{PR{RObj{[]}, w}}, w => pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MM{}, w), q,
           Equal.trans(Maybe<&2, PR>, brk('}', skip_ws(rest), w => Some{PR{RObj{[]}, w}}, w => pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MM{}, w)), pvc(MV{}, skip_ws(String.append(b, rest))), Some{q}, Equal.sym(Maybe<&2, PR>, pvc(MV{}, skip_ws(String.append(b, rest))), brk('}', skip_ws(rest), w => Some{PR{RObj{[]}, w}}, w => pv(1n+String.length(String.append(str_tl(skip_ws(b)), rest)), MM{}, w)), objOpen(b, rest, tokM(GRAMMAR, {==}, "begin-object", '{', b, {==}, {==}, hyp("begin-object", b, hb)))), eq),
-          +w => +hkc => emptyObjBad({Laws.load.era(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, w, q, m <> o, hkc, hrq, {==}),
+          +w => +hkc => emptyObjBad({R.le(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest)))))) == Some{VObj{(key, x) <> m <> o}} : Maybe<V>}, w, q, m <> o, hkc, hrq, {==}),
           +hko => objCons2(b, k, n, v, sep, rest, tokM(GRAMMAR, {==}, "begin-object", '{', b, {==}, {==}, hyp("begin-object", b, hb)), tokM(GRAMMAR, {==}, "name-separator", ':', n, {==}, {==}, hyp("name-separator", n, hn)), tokM(GRAMMAR, {==}, "value-separator", ',', sep, {==}, {==}, hyp("value-separator", sep, hsep)),
             q1, xs, q2, es, charIs(ABNF.full(toList(GRAMMAR)), '"', q1, MBe(GRAMMAR, {==}, "quotation-mark", ABNF.char('"'), q1, {==}, h1)), charIs(ABNF.full(toList(GRAMMAR)), '"', q2, MBe(GRAMMAR, {==}, "quotation-mark", ABNF.char('"'), q2, {==}, h3)), hxs,
             key, hkey, x, hx, m <> o, r1, u1, e1, w1, q, hemp, hrq, hko)))))
@@ -7513,19 +13231,19 @@ def ctlScan(n: Nat, +hn: {le(n, 31n) == True{} : Bool}, -E: String) -> {str_scan
                                                                                                                                 case 1n+n32:
                                                                                                                                   Empty.absurd({str_scan(ctlS(1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+n32, E), SN{}) == prepAll(ctlS(1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+n32, SNil{}), str_scan(E, SN{})) : Maybe<&2, SP>}, false_ne_true(hn))
 
-def uniSplit.t(+c: Char, -t: String, +hc: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, +h: {Extra.String.is_unicode.era(SCon{c, t}) == True{} : Bool}) -> {Extra.String.is_unicode.era(t) == True{} : Bool}:
+def uniSplit.t(+c: Char, -t: String, +hc: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, +h: {F.uall(SCon{c, t}) == True{} : Bool}) -> {F.uall(t) == True{} : Bool}:
   %hc : {List.all.if(u => List.all(~&2, ~Char, ~(x => (Char.to_u32(x) <= 1114111 : U32)), String.to_list(t)), _) == True{} : Bool}
   h
 
-def uniSplit.f(+c: Char, -t: String, +hc: {U32.is_le(Char.to_u32(c), 1114111) == False{} : Bool}, +h: {Extra.String.is_unicode.era(SCon{c, t}) == True{} : Bool}) -> {False{} == True{} : Bool}:
+def uniSplit.f(+c: Char, -t: String, +hc: {U32.is_le(Char.to_u32(c), 1114111) == False{} : Bool}, +h: {F.uall(SCon{c, t}) == True{} : Bool}) -> {False{} == True{} : Bool}:
   %hc : {List.all.if(u => List.all(~&2, ~Char, ~(x => (Char.to_u32(x) <= 1114111 : U32)), String.to_list(t)), _) == True{} : Bool}
   h
 
 # One character of a Unicode text, and the rest.
-def uniSplit(+c: Char, -t: String, +h: {Extra.String.is_unicode.era(SCon{c, t}) == True{} : Bool}) -> {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool} & {Extra.String.is_unicode.era(t) == True{} : Bool}:
-  bcase({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool} & {Extra.String.is_unicode.era(t) == True{} : Bool}, U32.is_le(Char.to_u32(c), 1114111),
+def uniSplit(+c: Char, -t: String, +h: {F.uall(SCon{c, t}) == True{} : Bool}) -> {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool} & {F.uall(t) == True{} : Bool}:
+  bcase({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool} & {F.uall(t) == True{} : Bool}, U32.is_le(Char.to_u32(c), 1114111),
     +hc => (hc, uniSplit.t(c, t, hc, h)),
-    +hc => Empty.absurd({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool} & {Extra.String.is_unicode.era(t) == True{} : Bool}, false_ne_true(uniSplit.f(c, t, hc, h))))
+    +hc => Empty.absurd({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool} & {F.uall(t) == True{} : Bool}, false_ne_true(uniSplit.f(c, t, hc, h))))
 
 # Decoding a character's escape gives the character.
 def DCgo(+c: Char, b1: Bool, b2: Bool, b3: Bool, -E: String, +e1: {Char.is_eq('"', c) == b1 : Bool}, +e2: {Char.is_eq('\\', c) == b2 : Bool}, +e3: {isunesc(c) == b3 : Bool}, +hu: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool})
@@ -7546,14 +13264,14 @@ def DCgo(+c: Char, b1: Bool, b2: Bool, b3: Bool, -E: String, +e1: {Char.is_eq('"
             case False{}:
               ctlDec(nv(c), lenCtl(c, e1, e2, e3, hu), c, {==}, E)
 
-def decEnc(d: String, +h: {Extra.String.is_unicode.era(d) == True{} : Bool}) -> {dec(enc2(d, SNil{}), DN{}, None{}) == d : String}:
+def decEnc(d: String, +h: {F.uall(d) == True{} : Bool}) -> {dec(enc2(d, SNil{}), DN{}, None{}) == d : String}:
   match d:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
       Equal.trans(String, dec(encC(c, enc2(t, SNil{})), DN{}, None{}), SCon{c, dec(enc2(t, SNil{}), DN{}, None{})}, SCon{c, t},
-        DCgo(c, Char.is_eq('"', c), Char.is_eq('\\', c), isunesc(c), enc2(t, SNil{}), {==}, {==}, {==}, first({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {Extra.String.is_unicode.era(t) == True{} : Bool}, uniSplit(c, t, h))),
-        cons_eq(c, dec(enc2(t, SNil{}), DN{}, None{}), t, decEnc(t, second({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {Extra.String.is_unicode.era(t) == True{} : Bool}, uniSplit(c, t, h)))))
+        DCgo(c, Char.is_eq('"', c), Char.is_eq('\\', c), isunesc(c), enc2(t, SNil{}), {==}, {==}, {==}, first({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {F.uall(t) == True{} : Bool}, uniSplit(c, t, h))),
+        cons_eq(c, dec(enc2(t, SNil{}), DN{}, None{}), t, decEnc(t, second({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {F.uall(t) == True{} : Bool}, uniSplit(c, t, h)))))
 
 # Scanning a character's escape reads exactly it.
 def SCgo(+c: Char, b1: Bool, b2: Bool, b3: Bool, -E: String, +e1: {Char.is_eq('"', c) == b1 : Bool}, +e2: {Char.is_eq('\\', c) == b2 : Bool}, +e3: {isunesc(c) == b3 : Bool}, +hu: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool})
@@ -7617,15 +13335,15 @@ def encApp1(+c: Char, b1: Bool, b2: Bool, b3: Bool, -E: String) -> {String.appen
 def encApp(+c: Char, -E: String) -> {String.append(encC(c, SNil{}), E) == encC(c, E) : String}:
   encApp1(c, Char.is_eq('"', c), Char.is_eq('\\', c), isunesc(c), E)
 
-def strScanEnc(d: String, +h: {Extra.String.is_unicode.era(d) == True{} : Bool}) -> {str_scan(enc2(d, "\""), SN{}) == Some{SP{enc2(d, SNil{}), SNil{}}} : Maybe<&2, SP>}:
+def strScanEnc(d: String, +h: {F.uall(d) == True{} : Bool}) -> {str_scan(enc2(d, "\""), SN{}) == Some{SP{enc2(d, SNil{}), SNil{}}} : Maybe<&2, SP>}:
   match d:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
       Equal.trans(Maybe<&2, SP>, str_scan(encC(c, enc2(t, "\"")), SN{}), prepAll(encC(c, SNil{}), str_scan(enc2(t, "\""), SN{})), Some{SP{encC(c, enc2(t, SNil{})), SNil{}}},
-        SCgo(c, Char.is_eq('"', c), Char.is_eq('\\', c), isunesc(c), enc2(t, "\""), {==}, {==}, {==}, first({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {Extra.String.is_unicode.era(t) == True{} : Bool}, uniSplit(c, t, h))),
+        SCgo(c, Char.is_eq('"', c), Char.is_eq('\\', c), isunesc(c), enc2(t, "\""), {==}, {==}, {==}, first({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {F.uall(t) == True{} : Bool}, uniSplit(c, t, h))),
         Equal.trans(Maybe<&2, SP>, prepAll(encC(c, SNil{}), str_scan(enc2(t, "\""), SN{})), prepAll(encC(c, SNil{}), Some{SP{enc2(t, SNil{}), SNil{}}}), Some{SP{encC(c, enc2(t, SNil{})), SNil{}}},
-          Equal.cong(Maybe<&2, SP>, Maybe<&2, SP>, z => prepAll(encC(c, SNil{}), z), str_scan(enc2(t, "\""), SN{}), Some{SP{enc2(t, SNil{}), SNil{}}}, strScanEnc(t, second({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {Extra.String.is_unicode.era(t) == True{} : Bool}, uniSplit(c, t, h)))),
+          Equal.cong(Maybe<&2, SP>, Maybe<&2, SP>, z => prepAll(encC(c, SNil{}), z), str_scan(enc2(t, "\""), SN{}), Some{SP{enc2(t, SNil{}), SNil{}}}, strScanEnc(t, second({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {F.uall(t) == True{} : Bool}, uniSplit(c, t, h)))),
           Equal.trans(Maybe<&2, SP>, prepAll(encC(c, SNil{}), Some{SP{enc2(t, SNil{}), SNil{}}}), Some{SP{String.append(encC(c, SNil{}), enc2(t, SNil{})), SNil{}}}, Some{SP{encC(c, enc2(t, SNil{})), SNil{}}},
             prepAll.app(encC(c, SNil{}), Some{SP{enc2(t, SNil{}), SNil{}}}),
             Equal.cong(String, Maybe<&2, SP>, z => Some{SP{z, SNil{}}}, String.append(encC(c, SNil{}), enc2(t, SNil{})), encC(c, enc2(t, SNil{})), encApp(c, enc2(t, SNil{}))))))
@@ -7642,7 +13360,7 @@ def enc2App(d: String, +Q: String) -> {String.append(enc2(d, SNil{}), Q) == enc2
           Equal.trans(String, String.append(encC(c, SNil{}), String.append(enc2(t, SNil{}), Q)), String.append(encC(c, SNil{}), enc2(t, Q)), encC(c, enc2(t, Q)),
             app_congl(encC(c, SNil{}), String.append(enc2(t, SNil{}), Q), enc2(t, Q), enc2App(t, Q)), encApp(c, enc2(t, Q)))))
 
-def strokEnc(+d: String, +h: {Extra.String.is_unicode.era(d) == True{} : Bool}) -> {strok(enc2(d, SNil{})) == True{} : Bool}:
+def strokEnc(+d: String, +h: {F.uall(d) == True{} : Bool}) -> {strok(enc2(d, SNil{})) == True{} : Bool}:
   %Equal.sym(String, String.append(enc2(d, SNil{}), "\""), enc2(d, "\""), enc2App(d, "\"")) : {okend(str_scan(_, SN{})) == True{} : Bool}
   %Equal.sym(Maybe<&2, SP>, str_scan(enc2(d, "\""), SN{}), Some{SP{enc2(d, SNil{}), SNil{}}}, strScanEnc(d, h)) : {okend(_) == True{} : Bool}
   {==}
@@ -7739,16 +13457,16 @@ def andE(-a: Bool, -b: Bool, +ea: {a == True{} : Bool}, +eb: {b == True{} : Bool
 def WR(v: V) -> Type:
   {wf(fr(v, VRec{})) == True{} : Bool} & {rvM(fr(v, VRec{})) == Some{v} : Maybe<V>}
 
-def keyEq(+s: String, +h: {Extra.String.is_unicode.era(s) == True{} : Bool}) -> {Laws.Text.make.try.era(Laws.decode.era(enc2(s, SNil{}))) == Some{TMk{s, h}} : Maybe<TxtT>}:
+def keyEq(+s: String, +h: {F.uall(s) == True{} : Bool}) -> {Laws.Text.make.try.era(Laws.decode.era(enc2(s, SNil{}))) == Some{TMk{s, h}} : Maybe<TxtT>}:
   Equal.trans(Maybe<TxtT>, Laws.Text.make.try.era(Laws.decode.era(enc2(s, SNil{}))), Laws.Text.make.try.era(s), Some{TMk{s, h}},
     Equal.cong(String, Maybe<TxtT>, z => Laws.Text.make.try.era(z), Laws.decode.era(enc2(s, SNil{})), s, decEnc(s, h)),
     Laws.Text.make.try.era.valid(s, TMk{s, h}, Laws.Text.make.try.valid(s, h)))
 
-def wrNum(+s: String, +h: {ABNF.matches.era(Laws.grammar, "number", s) == True{} : Bool}) -> WR(VNum{NMk{s, h}}):
-  (numokOf(GRAMMAR, {==}, s, MBe(GRAMMAR, {==}, "number", ABNF.seq([ABNF.opt(ABNF.ref("minus")), ABNF.ref("int"), ABNF.opt(ABNF.ref("frac")), ABNF.opt(ABNF.ref("exp"))]), s, {==}, mt(GRAMMAR, {==}, "number", s, hyp("number", s, h)))),
+def wrNum(+s: String, +h: {Laws.Number.valid(s) == True{} : Bool}) -> WR(VNum{NMk{s, h}}):
+  (numokOf(GRAMMAR, {==}, s, MBe(GRAMMAR, {==}, "number", ABNF.seq([ABNF.opt(ABNF.ref("minus")), ABNF.ref("int"), ABNF.opt(ABNF.ref("frac")), ABNF.opt(ABNF.ref("exp"))]), s, {==}, mt(GRAMMAR, {==}, "number", s, hyp("number", s, F.numA(s, h))))),
     Equal.cong(Maybe<NumT>, Maybe<V>, numV, Laws.Number.make.try.era(s), Some{NMk{s, h}}, Laws.Number.make.try.era.valid(s, NMk{s, h}, Laws.Number.make.try.valid(s, h))))
 
-def wrStr(+s: String, +h: {Extra.String.is_unicode.era(s) == True{} : Bool}) -> WR(VStr{TMk{s, h}}):
+def wrStr(+s: String, +h: {F.uall(s) == True{} : Bool}) -> WR(VStr{TMk{s, h}}):
   (strokEnc(s, h), Equal.cong(Maybe<TxtT>, Maybe<V>, strV, Laws.Text.make.try.era(Laws.decode.era(enc2(s, SNil{}))), Some{TMk{s, h}}, keyEq(s, h)))
 
 def wrArr1(-x: V, p: WR(x)) -> WR(VArr{[x]}):
@@ -7849,7 +13567,7 @@ def eqO(-k: TxtT, -x1: V, -x: V, -r1: V, -t: List<(TxtT & V)>, +e1: {x1 == x : V
   %Equal.sym(V, r1, VObj{t}, f1) : {consO((k, x), _) == VObj{(k, x) <> t} : V}
   {==}
 
-def dupObj(+s: String, +hs: {Extra.String.is_unicode.era(s) == True{} : Bool}, -x: V, -t: List<(TxtT & V)>, px: DupE(x), pt: DupE(VObj{t})) -> DupE(VObj{(TMk{s, hs}, x) <> t}):
+def dupObj(+s: String, +hs: {F.uall(s) == True{} : Bool}, -x: V, -t: List<(TxtT & V)>, px: DupE(x), pt: DupE(VObj{t})) -> DupE(VObj{(TMk{s, hs}, x) <> t}):
   match px:
     case (x1, x2, e1, e2):
       match pt:
@@ -7912,19 +13630,19 @@ def castWR(-a: V, -b: V, +e: {b == a : V}, w: WR(b)) -> WR(a):
   %e : WR(_)
   w
 
-def dlFin(a: V, w: WR(a)) -> {Laws.load.era(Laws.dump.era(a)) == Some{a} : Maybe<V>}:
+def dlFin(a: V, w: WR(a)) -> {R.le(Laws.dump.era(a)) == Some{a} : Maybe<V>}:
   match w:
     case (hw, hr):
-      Equal.trans(Maybe<V>, Laws.load.era(Laws.dump.era(a)), lv(Some{J{fr(a, VRec{}), istrue(wf(fr(a, VRec{})), hw)}}), Some{a},
+      Equal.trans(Maybe<V>, R.le(Laws.dump.era(a)), lv(Some{J{fr(a, VRec{}), istrue(wf(fr(a, VRec{})), hw)}}), Some{a},
         Equal.cong(Maybe<Js>, Maybe<V>, lv, load.ref(oDump(J{fr(a, VRec{}), istrue(wf(fr(a, VRec{})), hw)})), Some{J{fr(a, VRec{}), istrue(wf(fr(a, VRec{})), hw)}}, load.ref.dump_ok(GRAMMAR, {==}, J{fr(a, VRec{}), istrue(wf(fr(a, VRec{})), hw)})), hr)
 
-def dl.go(-v: V, p: DupE(v)) -> {Laws.load.era(Laws.dump.era(v)) == Some{v} : Maybe<V>}:
+def dl.go(-v: V, p: DupE(v)) -> {R.le(Laws.dump.era(v)) == Some{v} : Maybe<V>}:
   match p:
     case (a, b, +ea, eb):
-      %ea : {Laws.load.era(Laws.dump.era(_)) == Some{_} : Maybe<V>}
+      %ea : {R.le(Laws.dump.era(_)) == Some{_} : Maybe<V>}
       dlFin(a, castWR(a, b, Equal.trans(V, b, v, a, eb, Equal.sym(V, a, v, ea)), wr(b)))
 
-def Laws.dump.load(v):
+def R.dump.load(v: V) -> {R.le(Laws.dump.era(v)) == Some{v} : Maybe<V>}:
   dl.go(v, dupE(v))
 
 # ======================
@@ -9059,261 +14777,7 @@ def pairH(+h0: Bool, +h1: Bool, +h2: Bool, +h3: Bool, +h4: Bool, +h5: Bool, +h6:
 
 # The value of one hexadecimal digit: four bits, the rest False.
 def DVT(c: Char) -> Type:
-  &b0: Bool -> &b1: Bool -> &b2: Bool -> &b3: Bool -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, Word.zero(28n)}}}}} : U32}
-
-def dvk0(+c: Char, +e0: {Char.is_eq('0', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), True{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk1(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), True{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk2(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), True{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk3(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), True{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk4(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), True{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk5(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), True{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk6(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), True{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk7(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), True{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk8(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), True{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk9(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), True{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk10(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), True{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk11(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == False{} : Bool}, +e11: {Char.is_eq('b', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), False{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('b', c), True{}, e11) : {EP.cidx.if(_, 11, u => EP.cidx("cdef", c, (11 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk12(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == False{} : Bool}, +e11: {Char.is_eq('b', c) == False{} : Bool}, +e12: {Char.is_eq('c', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), False{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('b', c), False{}, e11) : {EP.cidx.if(_, 11, u => EP.cidx("cdef", c, (11 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('c', c), True{}, e12) : {EP.cidx.if(_, 12, u => EP.cidx("def", c, (12 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk13(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == False{} : Bool}, +e11: {Char.is_eq('b', c) == False{} : Bool}, +e12: {Char.is_eq('c', c) == False{} : Bool}, +e13: {Char.is_eq('d', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), False{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('b', c), False{}, e11) : {EP.cidx.if(_, 11, u => EP.cidx("cdef", c, (11 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('c', c), False{}, e12) : {EP.cidx.if(_, 12, u => EP.cidx("def", c, (12 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('d', c), True{}, e13) : {EP.cidx.if(_, 13, u => EP.cidx("ef", c, (13 + 1 : U32))) == U32{WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk14(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == False{} : Bool}, +e11: {Char.is_eq('b', c) == False{} : Bool}, +e12: {Char.is_eq('c', c) == False{} : Bool}, +e13: {Char.is_eq('d', c) == False{} : Bool}, +e14: {Char.is_eq('e', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), False{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('b', c), False{}, e11) : {EP.cidx.if(_, 11, u => EP.cidx("cdef", c, (11 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('c', c), False{}, e12) : {EP.cidx.if(_, 12, u => EP.cidx("def", c, (12 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('d', c), False{}, e13) : {EP.cidx.if(_, 13, u => EP.cidx("ef", c, (13 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('e', c), True{}, e14) : {EP.cidx.if(_, 14, u => EP.cidx("f", c, (14 + 1 : U32))) == U32{WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk15(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == False{} : Bool}, +e11: {Char.is_eq('b', c) == False{} : Bool}, +e12: {Char.is_eq('c', c) == False{} : Bool}, +e13: {Char.is_eq('d', c) == False{} : Bool}, +e14: {Char.is_eq('e', c) == False{} : Bool}, +e15: {Char.is_eq('f', c) == True{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), False{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('b', c), False{}, e11) : {EP.cidx.if(_, 11, u => EP.cidx("cdef", c, (11 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('c', c), False{}, e12) : {EP.cidx.if(_, 12, u => EP.cidx("def", c, (12 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('d', c), False{}, e13) : {EP.cidx.if(_, 13, u => EP.cidx("ef", c, (13 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('e', c), False{}, e14) : {EP.cidx.if(_, 14, u => EP.cidx("f", c, (14 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('f', c), True{}, e15) : {EP.cidx.if(_, 15, u => EP.cidx("", c, (15 + 1 : U32))) == U32{WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dvk16(+c: Char, +e0: {Char.is_eq('0', c) == False{} : Bool}, +e1: {Char.is_eq('1', c) == False{} : Bool}, +e2: {Char.is_eq('2', c) == False{} : Bool}, +e3: {Char.is_eq('3', c) == False{} : Bool}, +e4: {Char.is_eq('4', c) == False{} : Bool}, +e5: {Char.is_eq('5', c) == False{} : Bool}, +e6: {Char.is_eq('6', c) == False{} : Bool}, +e7: {Char.is_eq('7', c) == False{} : Bool}, +e8: {Char.is_eq('8', c) == False{} : Bool}, +e9: {Char.is_eq('9', c) == False{} : Bool}, +e10: {Char.is_eq('a', c) == False{} : Bool}, +e11: {Char.is_eq('b', c) == False{} : Bool}, +e12: {Char.is_eq('c', c) == False{} : Bool}, +e13: {Char.is_eq('d', c) == False{} : Bool}, +e14: {Char.is_eq('e', c) == False{} : Bool}, +e15: {Char.is_eq('f', c) == False{} : Bool}) -> {EP.cidx("0123456789abcdef", c, 0) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}:
-  %Equal.sym(Bool, Char.is_eq('0', c), False{}, e0) : {EP.cidx.if(_, 0, u => EP.cidx("123456789abcdef", c, (0 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('1', c), False{}, e1) : {EP.cidx.if(_, 1, u => EP.cidx("23456789abcdef", c, (1 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('2', c), False{}, e2) : {EP.cidx.if(_, 2, u => EP.cidx("3456789abcdef", c, (2 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('3', c), False{}, e3) : {EP.cidx.if(_, 3, u => EP.cidx("456789abcdef", c, (3 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('4', c), False{}, e4) : {EP.cidx.if(_, 4, u => EP.cidx("56789abcdef", c, (4 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('5', c), False{}, e5) : {EP.cidx.if(_, 5, u => EP.cidx("6789abcdef", c, (5 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('6', c), False{}, e6) : {EP.cidx.if(_, 6, u => EP.cidx("789abcdef", c, (6 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('7', c), False{}, e7) : {EP.cidx.if(_, 7, u => EP.cidx("89abcdef", c, (7 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('8', c), False{}, e8) : {EP.cidx.if(_, 8, u => EP.cidx("9abcdef", c, (8 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('9', c), False{}, e9) : {EP.cidx.if(_, 9, u => EP.cidx("abcdef", c, (9 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('a', c), False{}, e10) : {EP.cidx.if(_, 10, u => EP.cidx("bcdef", c, (10 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('b', c), False{}, e11) : {EP.cidx.if(_, 11, u => EP.cidx("cdef", c, (11 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('c', c), False{}, e12) : {EP.cidx.if(_, 12, u => EP.cidx("def", c, (12 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('d', c), False{}, e13) : {EP.cidx.if(_, 13, u => EP.cidx("ef", c, (13 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('e', c), False{}, e14) : {EP.cidx.if(_, 14, u => EP.cidx("f", c, (14 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  %Equal.sym(Bool, Char.is_eq('f', c), False{}, e15) : {EP.cidx.if(_, 15, u => EP.cidx("", c, (15 + 1 : U32))) == U32{WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, Word.zero(28n)}}}}} : U32}
-  {==}
-
-def dv16(+c: Char) -> DVT(c):
-  bcase(DVT(c), Char.is_eq('0', c),
-    +e0 => (False{}, False{}, False{}, False{}, dvk0(c, e0)),
-    +e0 =>
-      bcase(DVT(c), Char.is_eq('1', c),
-        +e1 => (True{}, False{}, False{}, False{}, dvk1(c, e0, e1)),
-        +e1 =>
-          bcase(DVT(c), Char.is_eq('2', c),
-            +e2 => (False{}, True{}, False{}, False{}, dvk2(c, e0, e1, e2)),
-            +e2 =>
-              bcase(DVT(c), Char.is_eq('3', c),
-                +e3 => (True{}, True{}, False{}, False{}, dvk3(c, e0, e1, e2, e3)),
-                +e3 =>
-                  bcase(DVT(c), Char.is_eq('4', c),
-                    +e4 => (False{}, False{}, True{}, False{}, dvk4(c, e0, e1, e2, e3, e4)),
-                    +e4 =>
-                      bcase(DVT(c), Char.is_eq('5', c),
-                        +e5 => (True{}, False{}, True{}, False{}, dvk5(c, e0, e1, e2, e3, e4, e5)),
-                        +e5 =>
-                          bcase(DVT(c), Char.is_eq('6', c),
-                            +e6 => (False{}, True{}, True{}, False{}, dvk6(c, e0, e1, e2, e3, e4, e5, e6)),
-                            +e6 =>
-                              bcase(DVT(c), Char.is_eq('7', c),
-                                +e7 => (True{}, True{}, True{}, False{}, dvk7(c, e0, e1, e2, e3, e4, e5, e6, e7)),
-                                +e7 =>
-                                  bcase(DVT(c), Char.is_eq('8', c),
-                                    +e8 => (False{}, False{}, False{}, True{}, dvk8(c, e0, e1, e2, e3, e4, e5, e6, e7, e8)),
-                                    +e8 =>
-                                      bcase(DVT(c), Char.is_eq('9', c),
-                                        +e9 => (True{}, False{}, False{}, True{}, dvk9(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)),
-                                        +e9 =>
-                                          bcase(DVT(c), Char.is_eq('a', c),
-                                            +e10 => (False{}, True{}, False{}, True{}, dvk10(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)),
-                                            +e10 =>
-                                              bcase(DVT(c), Char.is_eq('b', c),
-                                                +e11 => (True{}, True{}, False{}, True{}, dvk11(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)),
-                                                +e11 =>
-                                                  bcase(DVT(c), Char.is_eq('c', c),
-                                                    +e12 => (False{}, False{}, True{}, True{}, dvk12(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)),
-                                                    +e12 =>
-                                                      bcase(DVT(c), Char.is_eq('d', c),
-                                                        +e13 => (True{}, False{}, True{}, True{}, dvk13(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)),
-                                                        +e13 =>
-                                                          bcase(DVT(c), Char.is_eq('e', c),
-                                                            +e14 => (False{}, True{}, True{}, True{}, dvk14(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)),
-                                                            +e14 =>
-                                                              bcase(DVT(c), Char.is_eq('f', c),
-                                                                +e15 => (True{}, True{}, True{}, True{}, dvk15(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)),
-                                                                +e15 =>
-                                                                  (False{}, False{}, False{}, False{}, dvk16(c, e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15))))))))))))))))))
+  &b0: Bool -> &b1: Bool -> &b2: Bool -> &b3: Bool -> {hexd(c) == U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, Word.zero(28n)}}}}} : U32}
 
 def f4(A: U32, B: U32, C: U32, D: U32) -> U32:
   U32.add(U32.mul(U32.add(U32.mul(U32.add(U32.mul(A, 16), B), 16), C), 16), D)
@@ -9332,7 +14796,99 @@ def H4(v: U32) -> Type:
 def X4(a: Char, b: Char, c: Char, d: Char) -> String:
   SCon{a, SCon{b, SCon{c, SCon{d, SNil{}}}}}
 
-def hexGo(+a: Char, +b: Char, +c: Char, +d: Char, pa: DVT(Char.to_lower(a)), pb: DVT(Char.to_lower(b)), pc: DVT(Char.to_lower(c)), pd: DVT(Char.to_lower(d))) -> H4(hexv(X4(a, b, c, d), 0)):
+def F.dvL0(+c: Char, +k: {Char.is_eq('0', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('0', c, k) : DVT(_)
+  (False{}, False{}, False{}, False{}, {==})
+
+def F.dvL1(+c: Char, +k: {Char.is_eq('1', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('1', c, k) : DVT(_)
+  (True{}, False{}, False{}, False{}, {==})
+
+def F.dvL2(+c: Char, +k: {Char.is_eq('2', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('2', c, k) : DVT(_)
+  (False{}, True{}, False{}, False{}, {==})
+
+def F.dvL3(+c: Char, +k: {Char.is_eq('3', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('3', c, k) : DVT(_)
+  (True{}, True{}, False{}, False{}, {==})
+
+def F.dvL4(+c: Char, +k: {Char.is_eq('4', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('4', c, k) : DVT(_)
+  (False{}, False{}, True{}, False{}, {==})
+
+def F.dvL5(+c: Char, +k: {Char.is_eq('5', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('5', c, k) : DVT(_)
+  (True{}, False{}, True{}, False{}, {==})
+
+def F.dvL6(+c: Char, +k: {Char.is_eq('6', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('6', c, k) : DVT(_)
+  (False{}, True{}, True{}, False{}, {==})
+
+def F.dvL7(+c: Char, +k: {Char.is_eq('7', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('7', c, k) : DVT(_)
+  (True{}, True{}, True{}, False{}, {==})
+
+def F.dvL8(+c: Char, +k: {Char.is_eq('8', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('8', c, k) : DVT(_)
+  (False{}, False{}, False{}, True{}, {==})
+
+def F.dvL9(+c: Char, +k: {Char.is_eq('9', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('9', c, k) : DVT(_)
+  (True{}, False{}, False{}, True{}, {==})
+
+def F.dvL10(+c: Char, +k: {Char.is_eq('a', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('a', c, k) : DVT(_)
+  (False{}, True{}, False{}, True{}, {==})
+
+def F.dvL11(+c: Char, +k: {Char.is_eq('b', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('b', c, k) : DVT(_)
+  (True{}, True{}, False{}, True{}, {==})
+
+def F.dvL12(+c: Char, +k: {Char.is_eq('c', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('c', c, k) : DVT(_)
+  (False{}, False{}, True{}, True{}, {==})
+
+def F.dvL13(+c: Char, +k: {Char.is_eq('d', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('d', c, k) : DVT(_)
+  (True{}, False{}, True{}, True{}, {==})
+
+def F.dvL14(+c: Char, +k: {Char.is_eq('e', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('e', c, k) : DVT(_)
+  (False{}, True{}, True{}, True{}, {==})
+
+def F.dvL15(+c: Char, +k: {Char.is_eq('f', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('f', c, k) : DVT(_)
+  (True{}, True{}, True{}, True{}, {==})
+
+def F.dvL16(+c: Char, +k: {Char.is_eq('A', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('A', c, k) : DVT(_)
+  (False{}, True{}, False{}, True{}, {==})
+
+def F.dvL17(+c: Char, +k: {Char.is_eq('B', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('B', c, k) : DVT(_)
+  (True{}, True{}, False{}, True{}, {==})
+
+def F.dvL18(+c: Char, +k: {Char.is_eq('C', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('C', c, k) : DVT(_)
+  (False{}, False{}, True{}, True{}, {==})
+
+def F.dvL19(+c: Char, +k: {Char.is_eq('D', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('D', c, k) : DVT(_)
+  (True{}, False{}, True{}, True{}, {==})
+
+def F.dvL20(+c: Char, +k: {Char.is_eq('E', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('E', c, k) : DVT(_)
+  (False{}, True{}, True{}, True{}, {==})
+
+def F.dvL21(+c: Char, +k: {Char.is_eq('F', c) == True{} : Bool}) -> DVT(c):
+  %char_eq('F', c, k) : DVT(_)
+  (True{}, True{}, True{}, True{}, {==})
+
+# A hex digit's value has four bits.
+def F.dvH(+c: Char, +h: {F.hx(c) == True{} : Bool}) -> DVT(c):
+  bcase(DVT(c), Char.is_eq('0', c), +k => F.dvL0(c, k), +n0 => bcase(DVT(c), Char.is_eq('1', c), +k => F.dvL1(c, k), +n1 => bcase(DVT(c), Char.is_eq('2', c), +k => F.dvL2(c, k), +n2 => bcase(DVT(c), Char.is_eq('3', c), +k => F.dvL3(c, k), +n3 => bcase(DVT(c), Char.is_eq('4', c), +k => F.dvL4(c, k), +n4 => bcase(DVT(c), Char.is_eq('5', c), +k => F.dvL5(c, k), +n5 => bcase(DVT(c), Char.is_eq('6', c), +k => F.dvL6(c, k), +n6 => bcase(DVT(c), Char.is_eq('7', c), +k => F.dvL7(c, k), +n7 => bcase(DVT(c), Char.is_eq('8', c), +k => F.dvL8(c, k), +n8 => bcase(DVT(c), Char.is_eq('9', c), +k => F.dvL9(c, k), +n9 => bcase(DVT(c), Char.is_eq('a', c), +k => F.dvL10(c, k), +n10 => bcase(DVT(c), Char.is_eq('b', c), +k => F.dvL11(c, k), +n11 => bcase(DVT(c), Char.is_eq('c', c), +k => F.dvL12(c, k), +n12 => bcase(DVT(c), Char.is_eq('d', c), +k => F.dvL13(c, k), +n13 => bcase(DVT(c), Char.is_eq('e', c), +k => F.dvL14(c, k), +n14 => bcase(DVT(c), Char.is_eq('f', c), +k => F.dvL15(c, k), +n15 => bcase(DVT(c), Char.is_eq('A', c), +k => F.dvL16(c, k), +n16 => bcase(DVT(c), Char.is_eq('B', c), +k => F.dvL17(c, k), +n17 => bcase(DVT(c), Char.is_eq('C', c), +k => F.dvL18(c, k), +n18 => bcase(DVT(c), Char.is_eq('D', c), +k => F.dvL19(c, k), +n19 => bcase(DVT(c), Char.is_eq('E', c), +k => F.dvL20(c, k), +n20 => bcase(DVT(c), Char.is_eq('F', c), +k => F.dvL21(c, k), +n21 => Empty.absurd(DVT(c), contra(F.hx(c), h, F.hxsF("0123456789abcdefABCDEF", c, False{}, (n0, (n1, (n2, (n3, (n4, (n5, (n6, (n7, (n8, (n9, (n10, (n11, (n12, (n13, (n14, (n15, (n16, (n17, (n18, (n19, (n20, (n21, Unit{})))))))))))))))))))))))))))))))))))))))))))))))
+
+def hexGo(+a: Char, +b: Char, +c: Char, +d: Char, pa: DVT(a), pb: DVT(b), pc: DVT(c), pd: DVT(d)) -> H4(hexv(X4(a, b, c, d), 0)):
   match pa:
     case (+a0, +a1, +a2, +a3, ea):
       match pb:
@@ -9342,12 +14898,16 @@ def hexGo(+a: Char, +b: Char, +c: Char, +d: Char, pa: DVT(Char.to_lower(a)), pb:
               match pd:
                 case (+d0, +d1, +d2, +d3, ed):
                   (d0, d1, d2, d3, c0, c1, c2, c3, b0, b1, b2, b3, a0, a1, a2, a3, Equal.trans(U32, hexv(X4(a, b, c, d), 0), f4(U32{WCon{a0, WCon{a1, WCon{a2, WCon{a3, Word.zero(28n)}}}}}, U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, Word.zero(28n)}}}}}, U32{WCon{c0, WCon{c1, WCon{c2, WCon{c3, Word.zero(28n)}}}}}, U32{WCon{d0, WCon{d1, WCon{d2, WCon{d3, Word.zero(28n)}}}}}), U32{WCon{d0, WCon{d1, WCon{d2, WCon{d3, WCon{c0, WCon{c1, WCon{c2, WCon{c3, WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{a0, WCon{a1, WCon{a2, WCon{a3, Word.zero(16n)}}}}}}}}}}}}}}}}},
-                    f4cong(EP.dval(SCon{a, SNil{}}), U32{WCon{a0, WCon{a1, WCon{a2, WCon{a3, Word.zero(28n)}}}}}, EP.dval(SCon{b, SNil{}}), U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, Word.zero(28n)}}}}}, EP.dval(SCon{c, SNil{}}), U32{WCon{c0, WCon{c1, WCon{c2, WCon{c3, Word.zero(28n)}}}}}, EP.dval(SCon{d, SNil{}}), U32{WCon{d0, WCon{d1, WCon{d2, WCon{d3, Word.zero(28n)}}}}}, ea, eb, ec, ed),
+                    f4cong(hexd(a), U32{WCon{a0, WCon{a1, WCon{a2, WCon{a3, Word.zero(28n)}}}}}, hexd(b), U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, Word.zero(28n)}}}}}, hexd(c), U32{WCon{c0, WCon{c1, WCon{c2, WCon{c3, Word.zero(28n)}}}}}, hexd(d), U32{WCon{d0, WCon{d1, WCon{d2, WCon{d3, Word.zero(28n)}}}}}, ea, eb, ec, ed),
                     hex4w(a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3)))
 
 # The value of four hexadecimal digits is below U+10000.
-def HEX4(+a: Char, +b: Char, +c: Char, +d: Char) -> H4(hexv(X4(a, b, c, d), 0)):
-  hexGo(a, b, c, d, dv16(Char.to_lower(a)), dv16(Char.to_lower(b)), dv16(Char.to_lower(c)), dv16(Char.to_lower(d)))
+def HEX4(+a: Char, +b: Char, +c: Char, +d: Char, +hx: {F.ishexS(X4(a, b, c, d)) == True{} : Bool}) -> H4(hexv(X4(a, b, c, d), 0)):
+  +h4 = Equal.trans(Bool, F.h4(a, b, c, d), F.ishexS(X4(a, b, c, d)), True{}, Equal.sym(Bool, F.ishexS(X4(a, b, c, d)), F.h4(a, b, c, d), F.h4Eq(a, b, c, d)), hx)
+  hexGo(a, b, c, d, F.dvH(a, F.andL(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4)),
+    F.dvH(b, F.andL(F.hx(b), Bool.and(F.hx(c), F.hx(d)), F.andR(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4))),
+    F.dvH(c, F.andL(F.hx(c), F.hx(d), F.andR(F.hx(b), Bool.and(F.hx(c), F.hx(d)), F.andR(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4)))),
+    F.dvH(d, F.andR(F.hx(c), F.hx(d), F.andR(F.hx(b), Bool.and(F.hx(c), F.hx(d)), F.andR(F.hx(a), Bool.and(F.hx(b), Bool.and(F.hx(c), F.hx(d))), h4)))))
 
 def h4le(-v: U32, w: H4(v)) -> {U32.is_le(v, 1114111) == True{} : Bool}:
   match w:
@@ -9602,18 +15162,18 @@ def bcaseX(-C: Type, -X: Type, b: Bool, x: X, f: {b == True{} : Bool} -> X -> C,
     case False{}:
       g({==}, x)
 
-def uCons(+c: Char, -t: String, +hc: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, +ht: {Extra.String.is_unicode.era(t) == True{} : Bool}) -> {Extra.String.is_unicode.era(SCon{c, t}) == True{} : Bool}:
+def uCons(+c: Char, -t: String, +hc: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, +ht: {F.uall(t) == True{} : Bool}) -> {F.uall(SCon{c, t}) == True{} : Bool}:
   %Equal.sym(Bool, U32.is_le(Char.to_u32(c), 1114111), True{}, hc) : {List.all.if(u => List.all(~&2, ~Char, ~(x => (Char.to_u32(x) <= 1114111 : U32)), String.to_list(t)), _) == True{} : Bool}
   ht
 
-def uApp(s: String, -t: String, +hs: {Extra.String.is_unicode.era(s) == True{} : Bool}, +ht: {Extra.String.is_unicode.era(t) == True{} : Bool}) -> {Extra.String.is_unicode.era(String.append(s, t)) == True{} : Bool}:
+def uApp(s: String, -t: String, +hs: {F.uall(s) == True{} : Bool}, +ht: {F.uall(t) == True{} : Bool}) -> {F.uall(String.append(s, t)) == True{} : Bool}:
   match s:
     case SNil{}:
       ht
     case SCon{+c, +r}:
-      uCons(c, String.append(r, t), first({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {Extra.String.is_unicode.era(r) == True{} : Bool}, uniSplit(c, r, hs)), uApp(r, t, second({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {Extra.String.is_unicode.era(r) == True{} : Bool}, uniSplit(c, r, hs)), ht))
+      uCons(c, String.append(r, t), first({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {F.uall(r) == True{} : Bool}, uniSplit(c, r, hs)), uApp(r, t, second({U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}, {F.uall(r) == True{} : Bool}, uniSplit(c, r, hs)), ht))
 
-def emitU(p: Maybe<&2, U32>, -s: String, hp: PP(p), +hs: {Extra.String.is_unicode.era(s) == True{} : Bool}) -> {Extra.String.is_unicode.era(emit(p, s)) == True{} : Bool}:
+def emitU(p: Maybe<&2, U32>, -s: String, hp: PP(p), +hs: {F.uall(s) == True{} : Bool}) -> {F.uall(emit(p, s)) == True{} : Bool}:
   match p:
     case None{}:
       hs
@@ -9622,29 +15182,29 @@ def emitU(p: Maybe<&2, U32>, -s: String, hp: PP(p), +hs: {Extra.String.is_unicod
         case (hh, ee):
           uCons(Chr{h}, s, h4le(h, hh), hs)
 
-def uT(b: Bool, -x: Unit -> String, -y: Unit -> String, +e: {b == True{} : Bool}, +g: {Extra.String.is_unicode.era(x(Unit{})) == True{} : Bool}) -> {Extra.String.is_unicode.era(sel(String, b, x, y)) == True{} : Bool}:
-  %Equal.sym(String, sel(String, b, x, y), x(Unit{}), selT(String, b, x, y, e)) : {Extra.String.is_unicode.era(_) == True{} : Bool}
+def uT(b: Bool, -x: Unit -> String, -y: Unit -> String, +e: {b == True{} : Bool}, +g: {F.uall(x(Unit{})) == True{} : Bool}) -> {F.uall(sel(String, b, x, y)) == True{} : Bool}:
+  %Equal.sym(String, sel(String, b, x, y), x(Unit{}), selT(String, b, x, y, e)) : {F.uall(_) == True{} : Bool}
   g
 
-def uF(b: Bool, -x: Unit -> String, -y: Unit -> String, +e: {b == False{} : Bool}, +g: {Extra.String.is_unicode.era(y(Unit{})) == True{} : Bool}) -> {Extra.String.is_unicode.era(sel(String, b, x, y)) == True{} : Bool}:
-  %Equal.sym(String, sel(String, b, x, y), y(Unit{}), selF(String, b, x, y, e)) : {Extra.String.is_unicode.era(_) == True{} : Bool}
+def uF(b: Bool, -x: Unit -> String, -y: Unit -> String, +e: {b == False{} : Bool}, +g: {F.uall(y(Unit{})) == True{} : Bool}) -> {F.uall(sel(String, b, x, y)) == True{} : Bool}:
+  %Equal.sym(String, sel(String, b, x, y), y(Unit{}), selF(String, b, x, y, e)) : {F.uall(_) == True{} : Bool}
   g
 
-def fpreS(+v: U32, b: Bool, Hv: H4(v)) -> {Extra.String.is_unicode.era(sel(String, b, u => SNil{}, u => SCon{Chr{v}, SNil{}})) == True{} : Bool}:
+def fpreS(+v: U32, b: Bool, Hv: H4(v)) -> {F.uall(sel(String, b, u => SNil{}, u => SCon{Chr{v}, SNil{}})) == True{} : Bool}:
   match b:
     case True{}:
       {==}
     case False{}:
       uCons(Chr{v}, SNil{}, h4le(v, Hv), {==})
 
-def preS(+v: U32, +h: U32, b: Bool, +e: {lo(v) == b : Bool}, Hh: H4(h), Hv: H4(v), +hh: {hi(h) == True{} : Bool}) -> {Extra.String.is_unicode.era(sel(String, b, u => SCon{Chr{pair(h, v)}, SNil{}}, u => SCon{Chr{h}, fpre(v)})) == True{} : Bool}:
+def preS(+v: U32, +h: U32, b: Bool, +e: {lo(v) == b : Bool}, Hh: H4(h), Hv: H4(v), +hh: {hi(h) == True{} : Bool}) -> {F.uall(sel(String, b, u => SCon{Chr{pair(h, v)}, SNil{}}, u => SCon{Chr{h}, fpre(v)})) == True{} : Bool}:
   match b:
     case True{}:
       uCons(Chr{pair(h, v)}, SNil{}, pairB(h, v, Hh, Hv, hh, e), {==})
     case False{}:
       uCons(Chr{h}, fpre(v), h4le(h, Hh), fpreS(v, hi(v), Hv))
 
-def preU(+v: U32, p: Maybe<&2, U32>, Hv: H4(v), hp: PP(p)) -> {Extra.String.is_unicode.era(pre(v, p)) == True{} : Bool}:
+def preU(+v: U32, p: Maybe<&2, U32>, Hv: H4(v), hp: PP(p)) -> {F.uall(pre(v, p)) == True{} : Bool}:
   match p:
     case None{}:
       fpreS(v, hi(v), Hv)
@@ -9674,60 +15234,60 @@ def ppNp(+v: U32, p: Maybe<&2, U32>, Hv: H4(v)) -> PP(np(v, p)):
     case Some{h}:
       npS(v, lo(v), Hv)
 
-def X4U(+a: Char, +b: Char, +d: Char, +c: Char, +la: {U32.is_le(Char.to_u32(a), 1114111) == True{} : Bool}, +lb: {U32.is_le(Char.to_u32(b), 1114111) == True{} : Bool}, +ld: {U32.is_le(Char.to_u32(d), 1114111) == True{} : Bool}, +lc: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}) -> {Extra.String.is_unicode.era(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}) == True{} : Bool}:
+def X4U(+a: Char, +b: Char, +d: Char, +c: Char, +la: {U32.is_le(Char.to_u32(a), 1114111) == True{} : Bool}, +lb: {U32.is_le(Char.to_u32(b), 1114111) == True{} : Bool}, +ld: {U32.is_le(Char.to_u32(d), 1114111) == True{} : Bool}, +lc: {U32.is_le(Char.to_u32(c), 1114111) == True{} : Bool}) -> {F.uall(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}) == True{} : Bool}:
   uCons(a, SCon{b, SCon{d, SCon{c, SNil{}}}}, la, uCons(b, SCon{d, SCon{c, SNil{}}}, lb, uCons(d, SCon{c, SNil{}}, ld, uCons(c, SNil{}, lc, {==}))))
 
 # What decode gives for the inside of a JSON string, from any state, is Unicode.
-def UNI(s: String, k: K, +p: Maybe<&2, U32>, hp: PP(p), +hv: {vk(s, k) == True{} : Bool}) -> {Extra.String.is_unicode.era(dec(s, dsOf(k), p)) == True{} : Bool}:
+def UNI(s: String, k: K, +p: Maybe<&2, U32>, hp: PP(p), +hv: {vk(s, k) == True{} : Bool}) -> {F.uall(dec(s, dsOf(k), p)) == True{} : Bool}:
   match s:
     case SNil{}:
       match k:
         case KN{}:
           emitU(p, SNil{}, hp, {==})
         case KE{}:
-          Empty.absurd({Extra.String.is_unicode.era(dec(SNil{}, dsOf(KE{}), p)) == True{} : Bool}, fnt(hv))
+          Empty.absurd({F.uall(dec(SNil{}, dsOf(KE{}), p)) == True{} : Bool}, fnt(hv))
         case KH3{}:
-          Empty.absurd({Extra.String.is_unicode.era(dec(SNil{}, dsOf(KH3{}), p)) == True{} : Bool}, fnt(hv))
+          Empty.absurd({F.uall(dec(SNil{}, dsOf(KH3{}), p)) == True{} : Bool}, fnt(hv))
         case KH2{+a}:
-          Empty.absurd({Extra.String.is_unicode.era(dec(SNil{}, dsOf(KH2{a}), p)) == True{} : Bool}, fnt(and_r2(ishex(a), vs(SNil{}, SH{2n}), hv)))
+          Empty.absurd({F.uall(dec(SNil{}, dsOf(KH2{a}), p)) == True{} : Bool}, fnt(and_r2(ishex(a), vs(SNil{}, SH{2n}), hv)))
         case KH1{+a, +b}:
-          Empty.absurd({Extra.String.is_unicode.era(dec(SNil{}, dsOf(KH1{a, b}), p)) == True{} : Bool}, fnt(and_r2(ishex(b), vs(SNil{}, SH{1n}), and_r2(ishex(a), Bool.and(ishex(b), vs(SNil{}, SH{1n})), hv))))
+          Empty.absurd({F.uall(dec(SNil{}, dsOf(KH1{a, b}), p)) == True{} : Bool}, fnt(and_r2(ishex(b), vs(SNil{}, SH{1n}), and_r2(ishex(a), Bool.and(ishex(b), vs(SNil{}, SH{1n})), hv))))
         case KH0{+a, +b, +d}:
-          Empty.absurd({Extra.String.is_unicode.era(dec(SNil{}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, fnt(and_r2(ishex(d), vs(SNil{}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SNil{}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SNil{}, SH{0n}))), hv)))))
+          Empty.absurd({F.uall(dec(SNil{}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, fnt(and_r2(ishex(d), vs(SNil{}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SNil{}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SNil{}, SH{0n}))), hv)))))
     case SCon{+c, +t}:
       match k:
         case KN{}:
-          bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, PP(p), Char.is_eq('"', c), hp,
-            +e1 => hp1 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, fnt(hT(Bool, Char.is_eq('"', c), u => False{}, u => sel(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{})), True{}, e1, hv))),
-            +e1 => hp1 => bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, PP(p), Char.is_eq('\\', c), hp1,
+          bcaseX({F.uall(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, PP(p), Char.is_eq('"', c), hp,
+            +e1 => hp1 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, fnt(hT(Bool, Char.is_eq('"', c), u => False{}, u => sel(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{})), True{}, e1, hv))),
+            +e1 => hp1 => bcaseX({F.uall(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, PP(p), Char.is_eq('\\', c), hp1,
               +e2 => hp2 => uT(Char.is_eq(c, '\\'), u => dec(t, DE{}, p), u => emit(p, SCon{c, dec(t, DN{}, None{})}), eqSymT('\\', c, e2), UNI(t, KE{}, p, hp2, hT(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{}), True{}, e2, hF(Bool, Char.is_eq('"', c), u => False{}, u => sel(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{})), True{}, e1, hv)))),
-              +e2 => hp2 => bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, PP(p), isunesc(c), hp2,
+              +e2 => hp2 => bcaseX({F.uall(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, PP(p), isunesc(c), hp2,
                 +e3 => hp3 => uF(Char.is_eq(c, '\\'), u => dec(t, DE{}, p), u => emit(p, SCon{c, dec(t, DN{}, None{})}), eqSymF('\\', c, e2), emitU(p, SCon{c, dec(t, DN{}, None{})}, hp3, uCons(c, dec(t, DN{}, None{}), unescLe(c, e3), UNI(t, KN{}, None{}, Unit{}, hT(Bool, isunesc(c), u => vs(t, SN{}), u => False{}, True{}, e3, hF(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{}), True{}, e2, hF(Bool, Char.is_eq('"', c), u => False{}, u => sel(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{})), True{}, e1, hv))))))),
-                +e3 => hp3 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, fnt(hF(Bool, isunesc(c), u => vs(t, SN{}), u => False{}, True{}, e3, hF(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{}), True{}, e2, hF(Bool, Char.is_eq('"', c), u => False{}, u => sel(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{})), True{}, e1, hv))))))))
+                +e3 => hp3 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KN{}), p)) == True{} : Bool}, fnt(hF(Bool, isunesc(c), u => vs(t, SN{}), u => False{}, True{}, e3, hF(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{}), True{}, e2, hF(Bool, Char.is_eq('"', c), u => False{}, u => sel(Bool, Char.is_eq('\\', c), u => vs(t, SE{}), u => sel(Bool, isunesc(c), u => vs(t, SN{}), u => False{})), True{}, e1, hv))))))))
         case KE{}:
-          bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KE{}), p)) == True{} : Bool}, PP(p), issimple(c), hp,
+          bcaseX({F.uall(dec(SCon{c, t}, dsOf(KE{}), p)) == True{} : Bool}, PP(p), issimple(c), hp,
             +e1 => hp1 => uT(issimple(c), u => emit(p, SCon{esc(c), dec(t, DN{}, None{})}), u => sel(String, Char.is_eq(c, 'u'), u => dec(t, DU{SNil{}}, p), u => emit(p, SCon{'\\', SCon{c, dec(t, DN{}, None{})}})), e1, emitU(p, SCon{esc(c), dec(t, DN{}, None{})}, hp1, uCons(esc(c), dec(t, DN{}, None{}), simpleEscLe(c, e1), UNI(t, KN{}, None{}, Unit{}, hT(Bool, issimple(c), u => vs(t, SN{}), u => sel(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}), True{}, e1, hv))))),
-            +e1 => hp1 => bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KE{}), p)) == True{} : Bool}, PP(p), Char.is_eq('u', c), hp1,
+            +e1 => hp1 => bcaseX({F.uall(dec(SCon{c, t}, dsOf(KE{}), p)) == True{} : Bool}, PP(p), Char.is_eq('u', c), hp1,
               +e2 => hp2 => uF(issimple(c), u => emit(p, SCon{esc(c), dec(t, DN{}, None{})}), u => sel(String, Char.is_eq(c, 'u'), u => dec(t, DU{SNil{}}, p), u => emit(p, SCon{'\\', SCon{c, dec(t, DN{}, None{})}})), e1, uT(Char.is_eq(c, 'u'), u => dec(t, DU{SNil{}}, p), u => emit(p, SCon{'\\', SCon{c, dec(t, DN{}, None{})}}), eqSymT('u', c, e2), UNI(t, KH3{}, p, hp2, hT(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}, True{}, e2, hF(Bool, issimple(c), u => vs(t, SN{}), u => sel(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}), True{}, e1, hv))))),
-              +e2 => hp2 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KE{}), p)) == True{} : Bool}, fnt(hF(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}, True{}, e2, hF(Bool, issimple(c), u => vs(t, SN{}), u => sel(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}), True{}, e1, hv))))))
+              +e2 => hp2 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KE{}), p)) == True{} : Bool}, fnt(hF(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}, True{}, e2, hF(Bool, issimple(c), u => vs(t, SN{}), u => sel(Bool, Char.is_eq('u', c), u => vs(t, SH{3n}), u => False{}), True{}, e1, hv))))))
         case KH3{}:
-          bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH3{}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
+          bcaseX({F.uall(dec(SCon{c, t}, dsOf(KH3{}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
             +e => hp1 => UNI(t, KH2{c}, p, hp1, and_intro(ishex(c), vs(t, SH{2n}), e, hT(Bool, ishex(c), u => vs(t, SH{2n}), u => False{}, True{}, e, hv))),
-            +e => hp1 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH3{}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SH{2n}), u => False{}, True{}, e, hv))))
+            +e => hp1 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KH3{}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SH{2n}), u => False{}, True{}, e, hv))))
         case KH2{+a}:
-          bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH2{a}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
+          bcaseX({F.uall(dec(SCon{c, t}, dsOf(KH2{a}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
             +e => hp1 => UNI(t, KH1{a, c}, p, hp1, and_intro(ishex(a), Bool.and(ishex(c), vs(t, SH{1n})), and_l(ishex(a), vs(SCon{c, t}, SH{2n}), hv), and_intro(ishex(c), vs(t, SH{1n}), e, hT(Bool, ishex(c), u => vs(t, SH{1n}), u => False{}, True{}, e, and_r2(ishex(a), vs(SCon{c, t}, SH{2n}), hv))))),
-            +e => hp1 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH2{a}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SH{1n}), u => False{}, True{}, e, and_r2(ishex(a), vs(SCon{c, t}, SH{2n}), hv)))))
+            +e => hp1 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KH2{a}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SH{1n}), u => False{}, True{}, e, and_r2(ishex(a), vs(SCon{c, t}, SH{2n}), hv)))))
         case KH1{+a, +b}:
-          bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH1{a, b}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
+          bcaseX({F.uall(dec(SCon{c, t}, dsOf(KH1{a, b}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
             +e => hp1 => UNI(t, KH0{a, b, c}, p, hp1, and_intro(ishex(a), Bool.and(ishex(b), Bool.and(ishex(c), vs(t, SH{0n}))), and_l(ishex(a), Bool.and(ishex(b), vs(SCon{c, t}, SH{1n})), hv), and_intro(ishex(b), Bool.and(ishex(c), vs(t, SH{0n})), and_l(ishex(b), vs(SCon{c, t}, SH{1n}), and_r2(ishex(a), Bool.and(ishex(b), vs(SCon{c, t}, SH{1n})), hv)), and_intro(ishex(c), vs(t, SH{0n}), e, hT(Bool, ishex(c), u => vs(t, SH{0n}), u => False{}, True{}, e, and_r2(ishex(b), vs(SCon{c, t}, SH{1n}), and_r2(ishex(a), Bool.and(ishex(b), vs(SCon{c, t}, SH{1n})), hv))))))),
-            +e => hp1 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH1{a, b}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SH{0n}), u => False{}, True{}, e, and_r2(ishex(b), vs(SCon{c, t}, SH{1n}), and_r2(ishex(a), Bool.and(ishex(b), vs(SCon{c, t}, SH{1n})), hv))))))
+            +e => hp1 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KH1{a, b}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SH{0n}), u => False{}, True{}, e, and_r2(ishex(b), vs(SCon{c, t}, SH{1n}), and_r2(ishex(a), Bool.and(ishex(b), vs(SCon{c, t}, SH{1n})), hv))))))
         case KH0{+a, +b, +d}:
-          bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
-            +ec => hp1 => bcaseX({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, PP(p), Extra.String.is_hex.era(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), hp1,
-              +ex => hp2 => uT(Extra.String.is_hex.era(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}), ex, uApp(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p)), preU(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p, HEX4(a, b, d, c), hp2), UNI(t, KN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), ppNp(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p, HEX4(a, b, d, c)), hT(Bool, ishex(c), u => vs(t, SN{}), u => False{}, True{}, ec, and_r2(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv))))))),
-              +ex => hp2 => uF(Extra.String.is_hex.era(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}), ex, emitU(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}, hp2, uCons('\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}, {==}, uCons('u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{})), {==}, uApp(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}), X4U(a, b, d, c, ishexLe(a, and_l(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv)), ishexLe(b, and_l(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv))), ishexLe(d, and_l(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv)))), ishexLe(c, ec)), UNI(t, KN{}, None{}, Unit{}, hT(Bool, ishex(c), u => vs(t, SN{}), u => False{}, True{}, ec, and_r2(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv))))))))))),
-            +ec => hp1 => Empty.absurd({Extra.String.is_unicode.era(dec(SCon{c, t}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SN{}), u => False{}, True{}, ec, and_r2(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv)))))))
+          bcaseX({F.uall(dec(SCon{c, t}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, PP(p), ishex(c), hp,
+            +ec => hp1 => bcaseX({F.uall(dec(SCon{c, t}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, PP(p), F.ishexS(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), hp1,
+              +ex => hp2 => uT(F.ishexS(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}), ex, uApp(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p)), preU(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p, HEX4(a, b, d, c, ex), hp2), UNI(t, KN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), ppNp(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p, HEX4(a, b, d, c, ex)), hT(Bool, ishex(c), u => vs(t, SN{}), u => False{}, True{}, ec, and_r2(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv))))))),
+              +ex => hp2 => uF(F.ishexS(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}), u => String.append(pre(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p), dec(t, DN{}, np(hexv(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, 0), p))), u => emit(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}), ex, emitU(p, SCon{'\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}}, hp2, uCons('\\', SCon{'u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}))}, {==}, uCons('u', String.append(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{})), {==}, uApp(SCon{a, SCon{b, SCon{d, SCon{c, SNil{}}}}}, dec(t, DN{}, None{}), X4U(a, b, d, c, ishexLe(a, and_l(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv)), ishexLe(b, and_l(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv))), ishexLe(d, and_l(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv)))), ishexLe(c, ec)), UNI(t, KN{}, None{}, Unit{}, hT(Bool, ishex(c), u => vs(t, SN{}), u => False{}, True{}, ec, and_r2(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv))))))))))),
+            +ec => hp1 => Empty.absurd({F.uall(dec(SCon{c, t}, dsOf(KH0{a, b, d}), p)) == True{} : Bool}, fnt(hF(Bool, ishex(c), u => vs(t, SN{}), u => False{}, True{}, ec, and_r2(ishex(d), vs(SCon{c, t}, SH{0n}), and_r2(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n})), and_r2(ishex(a), Bool.and(ishex(b), Bool.and(ishex(d), vs(SCon{c, t}, SH{0n}))), hv)))))))
 
 def Laws.decode.unicode(q1, x, q2, hq1, hq2, hx):
   +q1 = q1
@@ -9736,3 +15296,100 @@ def Laws.decode.unicode(q1, x, q2, hq1, hq2, hx):
   +hq1 = hq1
   +hq2 = hq2
   UNI(x, KN{}, None{}, Unit{}, SV(x, SN{}, SNil{}, strC(GRAMMAR, {==}, x, SNil{}, strX(GRAMMAR, {==}, q1, x, q2, qmE(GRAMMAR, {==}, q1, hyp("quotation-mark", q1, hq1)), qmE(GRAMMAR, {==}, q2, hyp("quotation-mark", q2, hq2)), mt(GRAMMAR, {==}, "string", String.append(q1, String.append(x, q2)), hyp("string", String.append(q1, String.append(x, q2)), hx))))))
+
+# The load laws, of the fast loader
+# =================================
+
+# Each law holds of the reference loader (R.load.*), and the fast loader gives
+# the same answers (F.loadEq).
+
+def Laws.load.none(s, h):
+  +s = s
+  F.fromR(s, None{}, R.load.none(s, h))
+
+def Laws.load.text(w1, v, w2, h1, hv, h2):
+  +w1 = w1
+  +v = v
+  +w2 = w2
+  Equal.trans(Maybe<V>, Laws.load.era(String.append(w1, String.append(v, w2))), R.le(v), Laws.load.era(v),
+    F.fromR(String.append(w1, String.append(v, w2)), R.le(v), R.load.text(w1, v, w2, h1, hv, h2)),
+    Equal.sym(Maybe<V>, Laws.load.era(v), R.le(v), F.loadEq(v)))
+
+def Laws.load.null(t, h):
+  +t = t
+  F.fromR(t, Some{Laws.Value.null}, R.load.null(t, h))
+
+def Laws.load.true(t, h):
+  +t = t
+  F.fromR(t, Some{Laws.Value.bool(True{})}, R.load.true(t, h))
+
+def Laws.load.false(t, h):
+  +t = t
+  F.fromR(t, Some{Laws.Value.bool(False{})}, R.load.false(t, h))
+
+def Laws.load.number(n, h):
+  +n = n
+  F.fromR(n, Some{Laws.Value.number(Laws.Number.make(n, h))}, R.load.number(n, h))
+
+def Laws.load.string(q1, x, q2, hq1, hq2, hx, hu):
+  +q1 = q1
+  +x = x
+  +q2 = q2
+  F.fromR(String.append(q1, String.append(x, q2)), Some{Laws.Value.string(Laws.Text.make(Laws.decode.era(x), hu))}, R.load.string(q1, x, q2, hq1, hq2, hx, hu))
+
+def Laws.load.array.nil(b, e, hb, he):
+  +b = b
+  +e = e
+  F.fromR(String.append(b, e), Some{Laws.Value.array([])}, R.load.array.nil(b, e, hb, he))
+
+def Laws.load.array.one(b, v, e, hb, hv, he, x, hx):
+  +b = b
+  +v = v
+  +e = e
+  F.fromR(String.append(b, String.append(v, e)), Some{Laws.Value.array([x])}, R.load.array.one(b, v, e, hb, hv, he, x, F.toR(v, Some{x}, hx)))
+
+def Laws.load.array.cons(b, v, sep, rest, hb, hv, hsep, x, hx, x2, xs, hr):
+  +b = b
+  +v = v
+  +sep = sep
+  +rest = rest
+  F.fromR(String.append(b, String.append(v, String.append(sep, rest))), Some{Laws.Value.array(x <> x2 <> xs)},
+    R.load.array.cons(b, v, sep, rest, hb, hv, hsep, x, F.toR(v, Some{x}, hx), x2, xs, F.toR(String.append(b, rest), Some{Laws.Value.array(x2 <> xs)}, hr)))
+
+def Laws.load.object.nil(b, e, hb, he):
+  +b = b
+  +e = e
+  F.fromR(String.append(b, e), Some{Laws.Value.object([])}, R.load.object.nil(b, e, hb, he))
+
+def Laws.load.object.one(b, k, n, v, e, hb, hk, hn, hv, he, key, hkey, x, hx):
+  +b = b
+  +k = k
+  +n = n
+  +v = v
+  +e = e
+  F.fromR(String.append(b, String.append(k, String.append(n, String.append(v, e)))), Some{Laws.Value.object([(key, x)])},
+    R.load.object.one(b, k, n, v, e, hb, hk, hn, hv, he, key, F.toR(k, Some{Laws.Value.string(key)}, hkey), x, F.toR(v, Some{x}, hx)))
+
+def Laws.load.object.cons(b, k, n, v, sep, rest, hb, hk, hn, hv, hsep, key, hkey, x, hx, m, o, hr):
+  +b = b
+  +k = k
+  +n = n
+  +v = v
+  +sep = sep
+  +rest = rest
+  F.fromR(String.append(b, String.append(k, String.append(n, String.append(v, String.append(sep, rest))))), Some{Laws.Value.object((key, x) <> m <> o)},
+    R.load.object.cons(b, k, n, v, sep, rest, hb, hk, hn, hv, hsep, key, F.toR(k, Some{Laws.Value.string(key)}, hkey), x, F.toR(v, Some{x}, hx), m, o, F.toR(String.append(b, rest), Some{Laws.Value.object(m <> o)}, hr)))
+
+# dump.load: one copy of v for F.loadEq, one for the reference proof.
+def F.dlR(-a: V, b: V, +eba: {b == a : V}) -> {R.le(Laws.dump.era(a)) == Some{a} : Maybe<V>}:
+  %eba : {R.le(Laws.dump.era(_)) == Some{_} : Maybe<V>}
+  R.dump.load(b)
+
+def F.dl2(-v: V, p: DupE(v)) -> {Laws.load.era(Laws.dump.era(v)) == Some{v} : Maybe<V>}:
+  match p:
+    case (a, b, +ea, eb):
+      %ea : {Laws.load.era(Laws.dump.era(_)) == Some{_} : Maybe<V>}
+      Equal.trans(Maybe<V>, Laws.load.era(Laws.dump.era(a)), R.le(Laws.dump.era(a)), Some{a}, F.loadEq(Laws.dump.era(a)), F.dlR(a, b, Equal.trans(V, b, v, a, eb, Equal.sym(V, a, v, ea))))
+
+def Laws.dump.load(v):
+  F.dl2(v, dupE(v))
